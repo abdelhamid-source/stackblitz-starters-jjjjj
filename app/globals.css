@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='dark'] {
+  --background: #010103;
+  --foreground: #f8fafc;
+  --card: #0a0a0c;
+  --border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  overflow-x: hidden;
+  transition: background 0.4s ease;
+}
+
+.glass-sidebar {
+  background: rgba(10, 10, 12, 0.85);
+  backdrop-filter: blur(25px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+@keyframes liquid-border {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: #6366f1;
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
+  }
+}
+.animate-liquid-border {
+  animation: liquid-border 3s ease-in-out infinite;
+}
+
+@keyframes string-vibrate {
+  0%,
+  100% {
+    transform: scaleY(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scaleY(2.2);
+    opacity: 0.8;
+  }
+}
+.animate-vibrate {
+  animation: string-vibrate 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer-reverse {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+.animate-shimmer-reverse {
+  animation: shimmer-reverse 2s linear infinite;
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
