@@ -642,6 +642,55 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   </h2>
                   <p className="text-indigo-400 font-black text-xs uppercase tracking-[0.6em]">Research-Grounded Coaching for Everyday Lessons</p>
                 </div>
+
+                {/* WHY THIS EXISTS */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="w-full max-w-5xl mx-auto"
+                >
+                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2.5rem] p-10 md:p-14 space-y-10">
+
+                    {/* Label + intro */}
+                    <div className="text-center space-y-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-400/70">Why this exists</p>
+                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic leading-relaxed max-w-xl mx-auto">
+                        Before you paste your lesson, we want you to know one thing:
+                      </p>
+                    </div>
+
+                    {/* Two statements side by side */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
+                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
+                        <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
+                          The best lesson plan in the world means nothing if you're too burned out to deliver it.{' '}
+                          <span className="font-semibold text-[var(--foreground)]">
+                            Every hour saved on planning is an hour you show up more present, more energized, more <em>you</em> — and your students feel that.
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
+                        <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
+                          Every minute you spend on planning is a minute not spent on your students.{' '}
+                          <span className="font-semibold text-[var(--foreground)]">
+                            This tool gives those minutes back — so when you walk into that classroom, you're fully there.
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Closing anchor */}
+                    <div className="text-center pt-4 border-t border-[var(--border)]">
+                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic">
+                        That's what this tool is for. Not to replace you — to make sure your students always get the best of you.
+                      </p>
+                    </div>
+
+                  </div>
+                </motion.div>
+
                 <div className="relative group max-w-4xl w-full">
                   <div className="absolute -inset-1 bg-indigo-500/10 rounded-3xl blur-xl opacity-70"></div>
                   <div className="relative bg-[var(--card)] border border-[var(--border)] p-10 rounded-3xl shadow-2xl space-y-8 text-center">
