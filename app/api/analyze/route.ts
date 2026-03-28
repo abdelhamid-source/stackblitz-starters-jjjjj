@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     // --- PRIZE ---
     if (type === 'prize') {
       const prizePrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout — this must shape your vocabulary, phrasing, and attitude in every section. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". Every section must be written for ${config.profile} learners in a ${config.grade} ${config.subject} class. State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prizePrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 2000, messages: [{ role: 'system', content: prizePrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -26,7 +26,7 @@ Every activity, instruction, and item must be calibrated for ${config.grade} ${c
 TEACHER INSTRUCTIONS: "${userMessage || 'Create a comprehensive standard worksheet.'}" — STRICTLY FOLLOW THESE.
 Return ONLY JSON: { "html": string, "requiresImage": boolean, "imagePrompt": string }.
 HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grids. MINIMUM 7 items per activity. Put "{{IMAGE_PLACEHOLDER}}" where images go.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: matPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 4000, messages: [{ role: 'system', content: matPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       let obj = JSON.parse(r.choices[0].message.content || '{}');
       if (obj.requiresImage && obj.imagePrompt) {
         try {
@@ -49,21 +49,21 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
     // --- GAMIFIER ---
     if (type === 'gamifier') {
       const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a 10-question MCQ trivia game perfectly calibrated for Grade ${config.grade} ${config.subject} ${config.profile} learners in a ${config.minutes}-minute class. Questions must match the vocabulary, complexity, and content expectations for ${config.grade} ${config.profile} students. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1000, messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
     // --- IEP ---
     if (type === 'iep') {
       const ip = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a custom micro-scaffold accommodation for this specific student: "${userMessage}". This scaffold is for use in a Grade ${config.grade} ${config.subject} class of ${config.profile} learners within a ${config.minutes}-minute period. The scaffold must account for both the individual student's needs AND the broader class context (${config.profile}). Return ONLY JSON: { "html": "fully styled HTML ready to print" }.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: ip }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 2000, messages: [{ role: 'system', content: ip }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
     // --- CHAT ---
     if (type === 'chat') {
       const sc = `You are a Mentor Coach in a TEXT CHAT with a teacher. Adopt a "${config.tone}" tone — this must shape how you phrase every sentence. Grade: ${config?.grade}, Subject: ${config?.subject}, Profile: ${config?.profile}, Time: ${config?.minutes}m. Lesson (500 chars): "${(lessonText || '').substring(0, 500)}". Focus: ${lensContext?.name}, Theory: ${lensContext?.theory}. Rules: warm, natural, concise. Use HTML with <br><br> spacing and inline CSS color headings. Reference their specific lesson. NO MARKDOWN. End with a question.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: sc }, ...(chatHistory || []), { role: 'user', content: userMessage || '' }] });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 600, messages: [{ role: 'system', content: sc }, ...(chatHistory || []), { role: 'user', content: userMessage || '' }] });
       return NextResponse.json({ reply: r.choices[0].message.content?.replace(/[*#]/g, '') });
     }
 
@@ -91,7 +91,7 @@ RULES:
 
 Return ONLY JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
 
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 3000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -119,7 +119,7 @@ All suggestions calibrated for: Grade ${config.grade}, Subject ${config.subject}
 
 Return ONLY JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
 
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 3000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -134,7 +134,7 @@ Return ONLY JSON: { "feedback": { "id": "${item.id}", "sectionName": "${item.sec
         prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Teacher responded to "${item.category}" exceed-expectations guide. They said: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Update guidance to reflect their response. hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words. All revision text must be calibrated for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes.
 Return ONLY JSON: { "feedback": { "category": "${item.category}", "pioneer": "${item.pioneer}", "hasSection": ${item.hasSection}, "quote": "${item.quote || ''}", "currentLevel": "...", "revision": "...", "addWhere": "${item.addWhere || ''}" } }`;
       }
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 800, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -149,7 +149,7 @@ Return ONLY JSON: { "feedback": { "id": "act_r", "sectionName": "${sectionName}"
         prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Re-analyze "${category}" for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Provide updated exceed-expectations guidance. If hasSection true, quote must be EXACT substring max 25 words. All revision text calibrated for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes.
 Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "hasSection": ..., "quote": "...", "currentLevel": "...", "revision": "...", "addWhere": "..." } }`;
       }
-      const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 800, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -160,7 +160,7 @@ Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "
 ${(changelog || []).map((c: any, i: number) => `${i + 1}. [${c.sectionName}] "${c.isAddition ? '(new addition)' : c.quote}" → "${c.revision}"`).join('\n')}
 Write a warm, encouraging 3–4 sentence summary in a "${config.tone}" voice explaining what improved and why it strengthens the lesson for ${config.grade} ${config.profile} students in ${config.minutes} minutes. Be specific. End with one concrete next step appropriate for this class.
 Return ONLY JSON: { "summary": "..." }`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: sp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 400, messages: [{ role: 'system', content: sp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
@@ -169,7 +169,7 @@ Return ONLY JSON: { "summary": "..." }`;
       const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Review this revised lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes. Check if it NOW adequately addresses: 1. Scaffolding, 2. Differentiation, 3. Culturally Responsive Teaching, 4. Engagement, 5. Objectives.
 For each: "category", "adequatelyAddressed" (boolean), "note" (if not adequately addressed — one concrete sentence on what is still missing, written for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes).
 Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 600, messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
