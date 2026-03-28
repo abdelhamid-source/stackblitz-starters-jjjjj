@@ -14,14 +14,15 @@ export async function POST(req: Request) {
 
     // --- PRIZE ---
     if (type === 'prize') {
-      const prizePrompt = `You are an Elite Teacher Mentor. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
+      const prizePrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout — this must shape your vocabulary, phrasing, and attitude in every section. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". Every section must be written for ${config.profile} learners in a ${config.grade} ${config.subject} class. State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prizePrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
     // --- MATERIALIZER ---
     if (type === 'materializer') {
-      const matPrompt = `You are an Elite Teacher Mentor. Create an EXTREMELY LONG, highly creative printable student Worksheet. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, Time: ${config.minutes}m.
+      const matPrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout. Create an EXTREMELY LONG, highly creative printable student Worksheet tailored specifically for ${config.profile} learners. Grade: ${config.grade}, Subject: ${config.subject}, Time: ${config.minutes}m.
+Every activity, instruction, and item must be calibrated for ${config.grade} ${config.subject} ${config.profile} students within a ${config.minutes}-minute class.
 TEACHER INSTRUCTIONS: "${userMessage || 'Create a comprehensive standard worksheet.'}" — STRICTLY FOLLOW THESE.
 Return ONLY JSON: { "html": string, "requiresImage": boolean, "imagePrompt": string }.
 HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grids. MINIMUM 7 items per activity. Put "{{IMAGE_PLACEHOLDER}}" where images go.`;
@@ -47,28 +48,28 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
 
     // --- GAMIFIER ---
     if (type === 'gamifier') {
-      const gp = `You are an Elite Teacher Mentor. Create a 10-question MCQ game. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.`;
+      const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a 10-question MCQ trivia game perfectly calibrated for Grade ${config.grade} ${config.subject} ${config.profile} learners in a ${config.minutes}-minute class. Questions must match the vocabulary, complexity, and content expectations for ${config.grade} ${config.profile} students. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
     // --- IEP ---
     if (type === 'iep') {
-      const ip = `You are an Elite Teacher Mentor. Create a custom micro-scaffold for student: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, ${config.minutes}m. Return ONLY JSON: { "html": "fully styled HTML ready to print" }.`;
+      const ip = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a custom micro-scaffold accommodation for this specific student: "${userMessage}". This scaffold is for use in a Grade ${config.grade} ${config.subject} class of ${config.profile} learners within a ${config.minutes}-minute period. The scaffold must account for both the individual student's needs AND the broader class context (${config.profile}). Return ONLY JSON: { "html": "fully styled HTML ready to print" }.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: ip }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
     // --- CHAT ---
     if (type === 'chat') {
-      const sc = `You are a Mentor Coach in a TEXT CHAT with a teacher. Grade: ${config?.grade}, Subject: ${config?.subject}, Profile: ${config?.profile}, Time: ${config?.minutes}m. Lesson (500 chars): "${(lessonText || '').substring(0, 500)}". Focus: ${lensContext?.name}, Theory: ${lensContext?.theory}. Rules: warm, natural, concise. HTML format with <br><br> spacing and inline CSS headings. Reference their lesson. NO MARKDOWN. End with a question.`;
+      const sc = `You are a Mentor Coach in a TEXT CHAT with a teacher. Adopt a "${config.tone}" tone — this must shape how you phrase every sentence. Grade: ${config?.grade}, Subject: ${config?.subject}, Profile: ${config?.profile}, Time: ${config?.minutes}m. Lesson (500 chars): "${(lessonText || '').substring(0, 500)}". Focus: ${lensContext?.name}, Theory: ${lensContext?.theory}. Rules: warm, natural, concise. Use HTML with <br><br> spacing and inline CSS color headings. Reference their specific lesson. NO MARKDOWN. End with a question.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: sc }, ...(chatHistory || []), { role: 'user', content: userMessage || '' }] });
       return NextResponse.json({ reply: r.choices[0].message.content?.replace(/[*#]/g, '') });
     }
 
     // --- ITERATIVE SECTION 1: Activity & Section Feedback ---
     if (type === 'iterative-init-activities') {
-      const prompt = `You are an Elite Teacher Mentor reviewing a lesson plan.
+      const prompt = `You are an Elite Teacher Mentor reviewing a lesson plan. Adopt a "${config.tone}" tone throughout all feedback and revision text.
 
 LESSON CONTEXT: Grade ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Class Time: ${config.minutes} minutes.
 
@@ -96,7 +97,7 @@ Return ONLY JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "
 
     // --- ITERATIVE SECTION 2: Exceed Expectations Guide ---
     if (type === 'iterative-init-exceed') {
-      const prompt = `You are an Elite Teacher Mentor. Analyze this lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes.
+      const prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout all feedback and revision text. Analyze this lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes.
 
 Evaluate against 5 pedagogical frameworks and provide EXCEEDED EXPECTATIONS guidance for each:
 1. Scaffolding (Vygotsky — Zone of Proximal Development)
@@ -127,10 +128,10 @@ Return ONLY JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "
       const { item, sectionType } = body;
       let prompt = '';
       if (sectionType === 'activity') {
-        prompt = `Teacher responded to feedback on "${item.sectionName}" section. Quote: "${item.quote}". Teacher says: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Update feedback. Quote must be EXACT substring (max 25 words). Revision must be direct drop-in replacement.
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Teacher responded to feedback on "${item.sectionName}" section. Quote: "${item.quote}". Teacher says: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Update feedback and revision to reflect their response. Quote must be EXACT substring (max 25 words). Revision must be direct drop-in replacement for Grade ${config.grade} ${config.subject} ${config.profile}.
 Return ONLY JSON: { "feedback": { "id": "${item.id}", "sectionName": "${item.sectionName}", "quote": "...", "feedback": "...", "revision": "...", "priority": "${item.priority || 'MEDIUM'}", "notFound": false } }`;
       } else {
-        prompt = `Teacher responded to "${item.category}" exceed-expectations guide. They said: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Update guidance. hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words.
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Teacher responded to "${item.category}" exceed-expectations guide. They said: "${userMessage}". Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Update guidance to reflect their response. hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words. All revision text must be calibrated for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes.
 Return ONLY JSON: { "feedback": { "category": "${item.category}", "pioneer": "${item.pioneer}", "hasSection": ${item.hasSection}, "quote": "${item.quote || ''}", "currentLevel": "...", "revision": "...", "addWhere": "${item.addWhere || ''}" } }`;
       }
       const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
@@ -142,10 +143,10 @@ Return ONLY JSON: { "feedback": { "category": "${item.category}", "pioneer": "${
       const { sectionType, sectionName, category } = body;
       let prompt = '';
       if (sectionType === 'activity') {
-        prompt = `Re-analyze the "${sectionName}" section in this lesson. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Find the best remaining improvement. Quote must be EXACT verbatim substring max 25 words. Revision must be direct drop-in replacement appropriate for Grade ${config.grade} ${config.subject} ${config.profile}.
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Re-analyze the "${sectionName}" section in this lesson. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Find the best remaining improvement opportunity. Quote must be EXACT verbatim substring max 25 words. Revision must be a direct drop-in replacement written for Grade ${config.grade} ${config.subject} ${config.profile} students in ${config.minutes} minutes.
 Return ONLY JSON: { "feedback": { "id": "act_r", "sectionName": "${sectionName}", "quote": "...", "feedback": "...", "revision": "...", "priority": "...", "notFound": false } }`;
       } else {
-        prompt = `Re-analyze "${category}" for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Provide updated exceed-expectations guidance. If hasSection true, quote must be EXACT substring max 25 words. Revision calibrated for Grade ${config.grade} ${config.subject} ${config.profile}.
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Re-analyze "${category}" for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m. Provide updated exceed-expectations guidance. If hasSection true, quote must be EXACT substring max 25 words. All revision text calibrated for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes.
 Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "hasSection": ..., "quote": "...", "currentLevel": "...", "revision": "...", "addWhere": "..." } }`;
       }
       const r = await openai.chat.completions.create({ model: 'gpt-4o', messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
@@ -155,9 +156,9 @@ Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "
     // --- ITERATIVE SUMMARY ---
     if (type === 'iterative-summary') {
       const { changelog } = body;
-      const sp = `You are an Elite Teacher Mentor. Teacher made these improvements to their Grade ${config.grade} ${config.subject} ${config.profile} lesson:
+      const sp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher made these improvements to their Grade ${config.grade} ${config.subject} ${config.profile} lesson (${config.minutes}-minute class):
 ${(changelog || []).map((c: any, i: number) => `${i + 1}. [${c.sectionName}] "${c.isAddition ? '(new addition)' : c.quote}" → "${c.revision}"`).join('\n')}
-Write a warm, encouraging 3–4 sentence summary of what improved and why it strengthens the lesson. Be specific. End with one concrete next step.
+Write a warm, encouraging 3–4 sentence summary in a "${config.tone}" voice explaining what improved and why it strengthens the lesson for ${config.grade} ${config.profile} students in ${config.minutes} minutes. Be specific. End with one concrete next step appropriate for this class.
 Return ONLY JSON: { "summary": "..." }`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: sp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
@@ -165,8 +166,8 @@ Return ONLY JSON: { "summary": "..." }`;
 
     // --- ITERATIVE GAP DETECTOR ---
     if (type === 'iterative-gap') {
-      const gp = `You are an Elite Teacher Mentor. Review this revised lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes. Check if it NOW adequately addresses: 1. Scaffolding, 2. Differentiation, 3. Culturally Responsive Teaching, 4. Engagement, 5. Objectives.
-For each: "category", "adequatelyAddressed" (boolean), "note" (if not addressed — one concrete sentence on what is still missing).
+      const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Review this revised lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes. Check if it NOW adequately addresses: 1. Scaffolding, 2. Differentiation, 3. Culturally Responsive Teaching, 4. Engagement, 5. Objectives.
+For each: "category", "adequatelyAddressed" (boolean), "note" (if not adequately addressed — one concrete sentence on what is still missing, written for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes).
 Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
