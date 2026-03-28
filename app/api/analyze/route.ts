@@ -1,1176 +1,211 @@
-'use client';
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import mammoth from 'mammoth';
-import {
-  Sparkles, Clock, CheckCircle2, X, Target, Send, RefreshCcw,
-  BookOpen, Brain, Users, MessageSquare, ShieldCheck, ArrowRight,
-  Menu, LogOut, FileUp, Focus, Compass, Globe, Layers, Shuffle,
-  ClipboardCheck, Magnet, Lightbulb, Package, Flag, RotateCcw,
-  Zap, ChevronRight, Download, AlertTriangle, PlusCircle,
-} from 'lucide-react';
+export const maxDuration = 300;
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyBv7P9RVGYOZ-ORZ7PASadMyZPPNxBRvSc',
-  authDomain: 'research-lab-feedback-coach.firebaseapp.com',
-  projectId: 'research-lab-feedback-coach',
-  storageBucket: 'research-lab-feedback-coach.firebasestorage.app',
-  messagingSenderId: '80385187269',
-  appId: '1:80385187269:web:dee7104c99aaa620477fac',
-  measurementId: 'G-5ZKT9B6Y6H',
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const { lessonText, config, selectedLenses, type, chatHistory, userMessage, lensContext } = body;
 
-const ALL_CATS = ['Clarity','Alignment','Inclusivity','Scaffolding','Differentiation','Objectives','Assessments','Engagement','Strategies','Materials','Collaboration','Closure'];
-const CAT_DATA = [
-  { id: 1, name: 'Clarity', icon: <Focus size={24} />, color: '#00d2ff' },
-  { id: 2, name: 'Alignment', icon: <Compass size={24} />, color: '#ff0055' },
-  { id: 3, name: 'Inclusivity', icon: <Globe size={24} />, color: '#00ff88' },
-  { id: 4, name: 'Scaffolding', icon: <Layers size={24} />, color: '#ff9900' },
-  { id: 5, name: 'Differentiation', icon: <Shuffle size={24} />, color: '#bc13fe' },
-  { id: 6, name: 'Objectives', icon: <Target size={24} />, color: '#ff00ff' },
-  { id: 7, name: 'Assessments', icon: <ClipboardCheck size={24} />, color: '#0077ff' },
-  { id: 8, name: 'Engagement', icon: <Magnet size={24} />, color: '#ff3300' },
-  { id: 9, name: 'Strategies', icon: <Lightbulb size={24} />, color: '#ffee00' },
-  { id: 10, name: 'Materials', icon: <Package size={24} />, color: '#00ffff' },
-  { id: 11, name: 'Collaboration', icon: <Users size={24} />, color: '#00ffcc' },
-  { id: 12, name: 'Closure', icon: <Flag size={24} />, color: '#9d00ff' },
-];
+    const apiKey = process.env.OPENAI_API_KEY ?? '';
+    if (!apiKey) return NextResponse.json({ error: 'API Key Missing' }, { status: 401 });
+    const openai = new OpenAI({ apiKey });
 
-const EXCEED_COLORS: Record<string, string> = {
-  'Scaffolding': '#ff9900',
-  'Differentiation': '#bc13fe',
-  'Culturally Responsive Teaching': '#00ff88',
-  'Engagement': '#ff3300',
-  'Objectives': '#0077ff',
-};
-
-// Display part types for inline diff rendering
-type DisplayPart =
-  | { type: 'text'; content: string }
-  | { type: 'diff'; original: string; replacement: string; isAddition?: boolean };
-
-// Fuzzy replace — 4-strategy fallback
-const fuzzyReplace = (text: string, quote: string, revision: string): string => {
-  if (text.includes(quote)) return text.replace(quote, revision);
-  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
-  const nt = norm(text); const nq = norm(quote);
-  if (nt.includes(nq)) return nt.replace(nq, revision);
-  const li = nt.toLowerCase().indexOf(nq.toLowerCase());
-  if (li !== -1) return nt.substring(0, li) + revision + nt.substring(li + nq.length);
-  const partial = nq.substring(0, Math.min(25, nq.length));
-  const pi = nt.toLowerCase().indexOf(partial.toLowerCase());
-  if (pi !== -1) return text.substring(0, pi) + revision + text.substring(Math.min(pi + quote.length + 20, text.length));
-  return text;
-};
-
-// Apply diff to display parts array
-const applyDiffToDisplayParts = (parts: DisplayPart[], quote: string, revision: string): DisplayPart[] => {
-  if (!quote) return parts;
-  const newParts: DisplayPart[] = [];
-  let found = false;
-  for (const part of parts) {
-    if (found || part.type !== 'text') { newParts.push(part); continue; }
-    const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
-    let idx = part.content.indexOf(quote);
-    let matchedQuote = quote;
-    if (idx === -1) {
-      const normContent = norm(part.content);
-      const normQuote = norm(quote);
-      idx = normContent.toLowerCase().indexOf(normQuote.toLowerCase());
-      if (idx !== -1) { matchedQuote = normQuote; }
+    // --- PRIZE ---
+    if (type === 'prize') {
+      const prizePrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout — this must shape your vocabulary, phrasing, and attitude in every section. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". Every section must be written for ${config.profile} learners in a ${config.grade} ${config.subject} class. State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 3500, messages: [{ role: 'system', content: prizePrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
-    if (idx === -1) { newParts.push(part); continue; }
-    if (idx > 0) newParts.push({ type: 'text', content: part.content.substring(0, idx) });
-    newParts.push({ type: 'diff', original: matchedQuote, replacement: revision });
-    const after = part.content.substring(idx + matchedQuote.length);
-    if (after) newParts.push({ type: 'text', content: after });
-    found = true;
-  }
-  return newParts;
-};
 
-export default function PedagogicalLabSaaS() {
-  const [user, setUser] = useState<User | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [history, setHistory] = useState<any[]>([]);
-  const [step, setStep] = useState<'input' | 'dashboard' | 'iterative'>('input');
-  const [loading, setLoading] = useState(false);
-  const [lessonText, setLessonText] = useState('');
-  const [selectedLens, setSelectedLens] = useState<any | null>(null);
-  const [drawerTab, setDrawerTab] = useState<'mentoring' | 'quiz'>('mentoring');
-  const [config, setConfig] = useState({ tone: 'Coaching-style', grade: '6–8', subject: 'ELA', profile: 'General', mode: 'Full report', minutes: 45 });
-  const [lenses, setLenses] = useState<any[]>([]);
-  const [customSelection, setCustomSelection] = useState<string[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [quizResult, setQuizResult] = useState<number | null>(null);
-  const [prizeLoading, setPrizeLoading] = useState(false);
-  const [materialLoading, setMaterialLoading] = useState(false);
-  const [materializerInput, setMaterializerInput] = useState('');
-  const [gameLoading, setGameLoading] = useState(false);
-  const [iepInput, setIepInput] = useState('');
-  const [iepLoading, setIepLoading] = useState(false);
-
-  // --- ITERATIVE STATE ---
-  const [section1, setSection1] = useState<any[]>([]);
-  const [section2, setSection2] = useState<any[]>([]);
-  const [s1Loading, setS1Loading] = useState(false);
-  const [s2Loading, setS2Loading] = useState(false);
-  const [s1InitCount, setS1InitCount] = useState(0);
-  const [s2InitCount, setS2InitCount] = useState(0);
-  const [displayParts, setDisplayParts] = useState<DisplayPart[]>([]);
-  const [undoStack, setUndoStack] = useState<{ lessonText: string; displayParts: DisplayPart[] }[]>([]);
-  const [flashingId, setFlashingId] = useState<string | null>(null);
-  const [changelog, setChangelog] = useState<{ sectionName: string; quote: string; revision: string; isAddition?: boolean }[]>([]);
-  const [respondInputs, setRespondInputs] = useState<Record<string, string>>({});
-  const [expandedRespond, setExpandedRespond] = useState<string | null>(null);
-  const [reanalyzeLoading, setReanalyzeLoading] = useState<Record<string, boolean>>({});
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryText, setSummaryText] = useState('');
-  const [gapLoading, setGapLoading] = useState(false);
-  const [gapResults, setGapResults] = useState<any[]>([]);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const chatLoadingRef = useRef(false);
-  const chatHistoryRef = useRef<typeof chatHistory>([]);
-
-  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    onAuthStateChanged(auth, (u) => { if (u) { setUser(u); loadHistory(u.uid); } else setUser(null); });
-  }, [theme]);
-
-  const loadHistory = async (uid: string) => {
-    const q = query(collection(db, 'users', uid, 'reports'), orderBy('timestamp', 'desc'));
-    const snap = await getDocs(q);
-    setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  };
-
-  const handleLogin = async () => {
-    try { await signInWithPopup(auth, provider); }
-    catch (e: any) {
-      if (e?.code === 'auth/popup-blocked' || e?.code === 'auth/cancelled-popup-request') { await signInWithRedirect(auth, provider); return; }
-      alert(`Login Error: ${e.message}`);
+    // --- MATERIALIZER ---
+    if (type === 'materializer') {
+      const matPrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout. Create an EXTREMELY LONG, highly creative printable student Worksheet tailored specifically for ${config.profile} learners. Grade: ${config.grade}, Subject: ${config.subject}, Time: ${config.minutes}m.
+Every activity, instruction, and item must be calibrated for ${config.grade} ${config.subject} ${config.profile} students within a ${config.minutes}-minute class.
+TEACHER INSTRUCTIONS: "${userMessage || 'Create a comprehensive standard worksheet.'}" — STRICTLY FOLLOW THESE.
+Return ONLY JSON: { "html": string, "requiresImage": boolean, "imagePrompt": string }.
+HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grids. MINIMUM 7 items per activity. Put "{{IMAGE_PLACEHOLDER}}" where images go.`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 6000, messages: [{ role: 'system', content: matPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      let obj = JSON.parse(r.choices[0].message.content || '{}');
+      if (obj.requiresImage && obj.imagePrompt) {
+        try {
+          const fp = obj.imagePrompt + ' STRICT: 1 object. Black-and-white clipart line-art, white background. No humans/faces/eyes.';
+          const [a, b, c] = await Promise.all([
+            openai.images.generate({ model: 'dall-e-3', prompt: fp + ' (1)', n: 1, size: '1024x1024', response_format: 'b64_json' }),
+            openai.images.generate({ model: 'dall-e-3', prompt: fp + ' (2)', n: 1, size: '1024x1024', response_format: 'b64_json' }),
+            openai.images.generate({ model: 'dall-e-3', prompt: fp + ' (3)', n: 1, size: '1024x1024', response_format: 'b64_json' }),
+          ]);
+          const b64s = [a.data[0].b64_json || '', b.data[0].b64_json || '', c.data[0].b64_json || ''];
+          if (b64s.every(x => x)) {
+            const tag = `<div style="text-align:center;margin:30px 0;">${b64s.map(x => `<img src="data:image/png;base64,${x}" style="width:200px;height:200px;margin:15px;display:inline-block;border:2px dashed #000;padding:10px;" />`).join('')}</div>`;
+            obj.html = obj.html.replace('{{IMAGE_PLACEHOLDER}}', tag);
+          } else obj.html = obj.html.replace('{{IMAGE_PLACEHOLDER}}', '');
+        } catch { obj.html = obj.html.replace('{{IMAGE_PLACEHOLDER}}', ''); }
+      } else if (obj.html) obj.html = obj.html.replace('{{IMAGE_PLACEHOLDER}}', '');
+      return NextResponse.json(obj);
     }
-  };
-  const login = async () => { if (user) return user; await handleLogin(); return auth.currentUser; };
-  const toggleCustom = (cat: string) => setCustomSelection(p => p.includes(cat) ? p.filter(c => c !== cat) : [...p, cat]);
-  const chunkArray = <T,>(arr: T[], size: number): T[][] => { const c: T[][] = []; for (let i = 0; i < arr.length; i += size) c.push(arr.slice(i, i + size)); return c; };
 
-  const saveAndShowReport = async (cu: User, fb: any[]) => {
-    const id = Date.now().toString();
-    const processed = fb.map(f => ({ ...f, status: 'locked', quizScore: null }));
-    await setDoc(doc(db, 'users', cu.uid, 'reports', id), { lenses: processed, config, lessonText, timestamp: Date.now(), title: lessonText.substring(0, 30) + '...' });
-    setLenses(processed); setStep('dashboard'); loadHistory(cu.uid);
-  };
+    // --- GAMIFIER ---
+    if (type === 'gamifier') {
+      const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a 10-question MCQ trivia game perfectly calibrated for Grade ${config.grade} ${config.subject} ${config.profile} learners in a ${config.minutes}-minute class. Questions must match the vocabulary, complexity, and content expectations for ${config.grade} ${config.profile} students. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4.`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1000, messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
 
-  // --- ITERATIVE AGREE ---
-  const handleAgree = (item: any, sectionType: 'activity' | 'exceed') => {
-    const itemKey = item.id || item.category;
-    setUndoStack(prev => [...prev.slice(-4), { lessonText, displayParts }]);
-    setFlashingId(itemKey);
+    // --- IEP ---
+    if (type === 'iep') {
+      const ip = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a custom micro-scaffold accommodation for this specific student: "${userMessage}". This scaffold is for use in a Grade ${config.grade} ${config.subject} class of ${config.profile} learners within a ${config.minutes}-minute period. The scaffold must account for both the individual student's needs AND the broader class context (${config.profile}). Return ONLY JSON: { "html": "fully styled HTML ready to print" }.`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 3000, messages: [{ role: 'system', content: ip }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
 
-    setTimeout(() => {
-      if (sectionType === 'exceed' && !item.hasSection) {
-        // Append to lesson (new addition)
-        const addition = '\n\n' + item.revision;
-        setLessonText(prev => prev + addition);
-        setDisplayParts(prev => [...prev, { type: 'diff', original: '', replacement: item.revision, isAddition: true }]);
+    // --- CHAT ---
+    if (type === 'chat') {
+      const sc = `You are a Mentor Coach in a TEXT CHAT with a teacher. Adopt a "${config.tone}" tone — this must shape how you phrase every sentence. Grade: ${config?.grade}, Subject: ${config?.subject}, Profile: ${config?.profile}, Time: ${config?.minutes}m. Lesson (500 chars): "${(lessonText || '').substring(0, 500)}". Focus: ${lensContext?.name}, Theory: ${lensContext?.theory}. Rules: warm, natural, concise. Use HTML with <br><br> spacing and inline CSS color headings. Reference their specific lesson. NO MARKDOWN. End with a question.`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 800, messages: [{ role: 'system', content: sc }, ...(chatHistory || []), { role: 'user', content: userMessage || '' }] });
+      return NextResponse.json({ reply: r.choices[0].message.content?.replace(/[*#]/g, '') });
+    }
+
+    // --- ITERATIVE SECTION 1: Activity & Section Feedback ---
+    if (type === 'iterative-init-activities') {
+      const prompt = `You are an Elite Teacher Mentor — the best in the world — conducting a rigorous, deeply detailed iterative review of a lesson plan. Adopt a "${config.tone}" tone throughout every field.
+
+LESSON CONTEXT: Grade ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Class Time: ${config.minutes} minutes.
+
+Identify between 4 and 6 distinct ACTIVITIES or LESSON SECTIONS explicitly present in this lesson (e.g., hook, warm-up, direct instruction, guided practice, independent practice, group activity, exit ticket, closure, discussion, etc.).
+
+For EACH activity/section return ALL of the following fields with MAXIMUM DEPTH AND DETAIL:
+
+- "id": unique string like "act_1"
+- "sectionName": the name/label of this activity as it appears or can be inferred from the lesson
+- "quote": EXACT verbatim substring copied character-for-character from the lesson text representing this section. MAX 25 words. Must be findable via exact string search.
+- "notFound": false — only include sections that genuinely exist with a real exact quote
+- "feedback": THIS IS THE MOST IMPORTANT FIELD. Write a THOROUGH, DEEPLY ANALYTICAL critique of this specific activity (4–6 sentences minimum). You must: (1) Name the specific pedagogical weakness and explain WHY it is a weakness for ${config.profile} learners at Grade ${config.grade} in ${config.subject}. (2) Reference a relevant educational theory or researcher by name to ground your critique. (3) Explain the specific impact this weakness has on student learning outcomes in a ${config.minutes}-minute class. (4) Identify what is missing or underdeveloped. Do NOT be vague or generic — be precise, rigorous, and specific to this exact lesson and this exact activity.
+- "revision": A RICH, DETAILED, PEDAGOGICALLY ELEVATED rewrite of the quoted section. This is NOT just a cosmetic fix — it must be a meaningfully stronger version that directly addresses the weaknesses named in your feedback. Write it in the same voice and style as the teacher's original lesson but make it significantly better. Length should match or slightly exceed the original quote. It must be immediately usable by the teacher as a direct replacement — concrete, specific, and fully appropriate for Grade ${config.grade} ${config.subject} ${config.profile} students in ${config.minutes} minutes.
+- "priority": "HIGH" if this activity has a fundamental pedagogical flaw that directly hurts learning, "MEDIUM" if it is a meaningful but non-critical refinement
+
+CRITICAL RULES:
+- ONLY include real sections with real exact verbatim quotes from the lesson text
+- Spread feedback across DIFFERENT parts of the lesson — beginning, middle, and end
+- Every single field must be specific to Grade ${config.grade}, Subject ${config.subject}, ${config.profile} learners, ${config.minutes}-minute class
+- NEVER write generic feedback that could apply to any lesson — it must be specific to THIS lesson
+
+Return ONLY JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
+
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 7000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
+
+    // --- ITERATIVE SECTION 2: Exceed Expectations Guide ---
+    if (type === 'iterative-init-exceed') {
+      const prompt = `You are an Elite Teacher Mentor — the best in the world — building a deeply detailed, research-grounded "Exceed Expectations" guide for a lesson. Adopt a "${config.tone}" tone throughout every field.
+
+LESSON CONTEXT: Grade ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Class Time: ${config.minutes} minutes.
+
+Evaluate this lesson against 5 pedagogical frameworks and provide rich, expert-level guidance to reach TRULY EXCEEDED EXPECTATIONS for each:
+1. Scaffolding (Vygotsky — Zone of Proximal Development)
+2. Differentiation (Tomlinson — Universal Design for Learning)
+3. Culturally Responsive Teaching (Gloria Ladson-Billings)
+4. Engagement (Fredricks — Behavioral/Cognitive/Emotional Engagement Framework)
+5. Objectives (Bloom's Taxonomy — Anderson & Krathwohl revision)
+
+For EACH category return ALL of the following fields with MAXIMUM DEPTH AND DETAIL:
+
+- "category": exact name from list above
+- "pioneer": pioneer's full name
+- "hasSection": boolean — does this lesson have meaningful content addressing this framework?
+- "quote": if hasSection TRUE → EXACT verbatim substring from the lesson, max 25 words, copied character-for-character, findable via exact string search. If hasSection FALSE → empty string "".
+- "currentLevel": if hasSection TRUE → a DETAILED honest assessment of the current quality (3–4 sentences). Explain specifically what the teacher IS doing, what level of the framework they're reaching, and exactly where it falls short of exceeded expectations for Grade ${config.grade} ${config.subject} ${config.profile} learners.
+- "revision": THIS IS THE MOST IMPORTANT FIELD. Write a RICH, THOROUGH, RESEARCH-BACKED revision or addition (minimum 5–8 sentences or a full instructional paragraph). If hasSection TRUE → rewrite the quoted section to TRULY EXCEED EXPECTATIONS, including specific strategies, techniques, and concrete classroom moves appropriate for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. Name specific instructional strategies (e.g., "Think-Pair-Share," "tiered tasks," "culturally relevant anchor texts") and explain how they address the framework at the highest level. If hasSection FALSE → write a complete, polished, ready-to-insert instructional section that the teacher can drop directly into their lesson. Write it in the same voice and style as the teacher's original lesson. Include specific classroom directions, materials if needed, timing, and student-facing language where appropriate. It must be rich enough to genuinely elevate the lesson to EXCEEDED EXPECTATIONS.
+- "addWhere": if hasSection FALSE → specify exactly where in the lesson to insert this (e.g., "Insert after the Direct Instruction section, before Guided Practice" or "Add as the final 5 minutes of the Closure activity")
+
+ALL content must be calibrated with specificity for: Grade ${config.grade}, Subject ${config.subject}, ${config.profile} learners, ${config.minutes}-minute class. NEVER write generic guidance — every sentence must be specific to this lesson and this context.
+
+Return ONLY JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
+
+      const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 7000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
+
+    // --- ITERATIVE RESPOND ---
+    if (type === 'iterative-respond') {
+      const { item, sectionType } = body;
+      let prompt = '';
+      if (sectionType === 'activity') {
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your feedback on the "${item.sectionName}" section.
+Original quote: "${item.quote}"
+Teacher's response: "${userMessage}"
+Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
+
+Update your feedback and revision to reflect and directly address the teacher's response. Your updated "feedback" must be THOROUGH (4–6 sentences) — name the specific pedagogical issue, reference an educational theory or researcher, explain the impact on ${config.profile} learners at Grade ${config.grade}. Your updated "revision" must be a RICH, DETAILED, immediately usable drop-in replacement that directly addresses both the original weakness AND the teacher's specific concern. Quote must be EXACT verbatim substring (max 25 words).
+Return ONLY JSON: { "feedback": { "id": "${item.id}", "sectionName": "${item.sectionName}", "quote": "...", "feedback": "...", "revision": "...", "priority": "${item.priority || 'MEDIUM'}", "notFound": false } }`;
       } else {
-        setDisplayParts(prev => applyDiffToDisplayParts(prev, item.quote, item.revision));
-        setLessonText(prev => fuzzyReplace(prev, item.quote, item.revision));
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your "${item.category}" exceed-expectations guidance.
+Teacher's response: "${userMessage}"
+Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
+
+Update your guidance to directly address their response. Your "currentLevel" must be DETAILED (3–4 sentences) if hasSection is true. Your "revision" must be RICH and THOROUGH (5–8 sentences minimum) — specific strategies, concrete classroom moves, appropriate for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words.
+Return ONLY JSON: { "feedback": { "category": "${item.category}", "pioneer": "${item.pioneer}", "hasSection": ${item.hasSection}, "quote": "${item.quote || ''}", "currentLevel": "...", "revision": "...", "addWhere": "${item.addWhere || ''}" } }`;
       }
-      if (sectionType === 'activity') setSection1(prev => prev.filter(f => (f.id || f.sectionName) !== (item.id || item.sectionName)));
-      else setSection2(prev => prev.filter(g => g.category !== item.category));
-      setFlashingId(null);
-      setChangelog(prev => [...prev, { sectionName: item.sectionName || item.category, quote: item.quote || '', revision: item.revision, isAddition: sectionType === 'exceed' && !item.hasSection }]);
-    }, 700);
-  };
-
-  const handleDismiss = (item: any, sectionType: 'activity' | 'exceed') => {
-    if (sectionType === 'activity') setSection1(prev => prev.filter(f => (f.id || f.sectionName) !== (item.id || item.sectionName)));
-    else setSection2(prev => prev.filter(g => g.category !== item.category));
-  };
-
-  const handleUndo = () => {
-    if (undoStack.length === 0) return;
-    const prev = undoStack[undoStack.length - 1];
-    setLessonText(prev.lessonText);
-    setDisplayParts(prev.displayParts);
-    setUndoStack(s => s.slice(0, -1));
-    setChangelog(c => c.slice(0, -1));
-  };
-
-  const handleRespond = async (item: any, sectionType: 'activity' | 'exceed') => {
-    const key = item.id || item.category;
-    const val = respondInputs[key];
-    if (!val?.trim()) return;
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-respond', lessonText, item, sectionType, userMessage: val, config }) });
-      const data = await res.json();
-      if (data.feedback) {
-        if (sectionType === 'activity') setSection1(prev => prev.map(f => (f.id || f.sectionName) === (item.id || item.sectionName) ? { ...data.feedback } : f));
-        else setSection2(prev => prev.map(g => g.category === item.category ? { ...data.feedback } : g));
-        setRespondInputs(prev => ({ ...prev, [key]: '' }));
-        setExpandedRespond(null);
-      }
-    } catch { alert('Error updating feedback'); }
-  };
-
-  const handleReanalyze = async (item: any, sectionType: 'activity' | 'exceed') => {
-    const key = item.id || item.category;
-    setReanalyzeLoading(prev => ({ ...prev, [key]: true }));
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-reanalyze', lessonText, sectionType, sectionName: item.sectionName, category: item.category, config }) });
-      const data = await res.json();
-      if (data.feedback) {
-        if (sectionType === 'activity') setSection1(prev => prev.map(f => (f.id || f.sectionName) === (item.id || item.sectionName) ? { ...data.feedback, id: item.id } : f));
-        else setSection2(prev => prev.map(g => g.category === item.category ? { ...data.feedback } : g));
-      }
-    } catch (e) { console.error(e); }
-    setReanalyzeLoading(prev => ({ ...prev, [key]: false }));
-  };
-
-  const handleGenerateSummary = async () => {
-    setSummaryLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-summary', lessonText, changelog, config }) });
-      const data = await res.json();
-      setSummaryText(data.summary || '');
-    } catch (e) { console.error(e); }
-    setSummaryLoading(false);
-  };
-
-  const handleGapDetect = async () => {
-    setGapLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-gap', lessonText, config }) });
-      const data = await res.json();
-      setGapResults(data.gaps || []);
-    } catch (e) { console.error(e); }
-    setGapLoading(false);
-  };
-
-  const exportRevisedLesson = () => {
-    const paragraphs = lessonText.split('\n').filter(p => p.trim());
-    const rows = paragraphs.map((p, i) =>
-      `<tr><td style="padding:12px 16px;font-weight:bold;background:#f3f4f6;width:15%;vertical-align:top;border:1px solid #e5e7eb;font-family:Arial;font-size:11pt;">Section ${i + 1}</td><td style="padding:12px 16px;vertical-align:top;border:1px solid #e5e7eb;font-family:Arial;font-size:11pt;line-height:1.6;">${p.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`
-    ).join('');
-    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Revised Lesson Plan</title></head><body style="font-family:Arial;padding:40px;">
-<h1 style="color:#4f46e5;font-size:24pt;margin-bottom:8px;">Revised Lesson Plan</h1>
-<p style="color:#6b7280;font-size:10pt;margin-bottom:24px;">Grade: ${config.grade} &nbsp;|&nbsp; Subject: ${config.subject} &nbsp;|&nbsp; Profile: ${config.profile} &nbsp;|&nbsp; Duration: ${config.minutes} minutes</p>
-<table border="1" style="border-collapse:collapse;width:100%;">
-<tr><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Section</th><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Content</th></tr>
-${rows}
-</table>
-${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40px;">Changes Made During Review</h2><table border="1" style="border-collapse:collapse;width:100%;"><tr><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Section</th><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Original</th><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Revised</th></tr>${changelog.map(c => `<tr><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;">${c.sectionName}</td><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;color:#ef4444;text-decoration:line-through;">${c.isAddition ? '(new addition)' : c.quote}</td><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;color:#10b981;">${c.revision}</td></tr>`).join('')}</table>` : ''}
-</body></html>`;
-    const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'Revised_Lesson_Plan.doc';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
-
-  // Render document with inline diffs
-  const renderDocument = () => {
-    if (displayParts.length === 0) return <span style={{ whiteSpace: 'pre-wrap' }}>{lessonText}</span>;
-    return (
-      <>
-        {displayParts.map((part, i) => {
-          if (part.type === 'text') return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part.content}</span>;
-          return (
-            <span key={i} style={{ display: 'inline-block', width: '100%', margin: '6px 0', padding: '6px 10px', borderLeft: '3px solid #10b981', background: 'rgba(16,185,129,0.05)', borderRadius: '4px' }}>
-              {!part.isAddition && part.original && (
-                <span style={{ display: 'block', textDecoration: 'line-through', color: '#ef4444', opacity: 0.75, whiteSpace: 'pre-wrap', fontSize: '0.95em' }}>
-                  {part.original}
-                </span>
-              )}
-              {part.isAddition && (
-                <span style={{ display: 'block', fontSize: '0.7em', fontWeight: 900, letterSpacing: '0.1em', color: '#10b981', textTransform: 'uppercase', marginBottom: '4px' }}>
-                  + Added
-                </span>
-              )}
-              <span style={{ display: 'block', color: '#10b981', fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-                {part.replacement}
-              </span>
-            </span>
-          );
-        })}
-      </>
-    );
-  };
-
-  // --- START ANALYSIS ---
-  const startAnalysis = async () => {
-    let cu = user || (await login());
-    if (!cu || !lessonText) return;
-    if (config.mode === 'Custom selection' && customSelection.length === 0) return alert('Select categories.');
-
-    if (config.mode === 'Iterative feedback') {
-      setLoading(true);
-      setSection1([]); setSection2([]);
-      setS1Loading(true); setS2Loading(true);
-      setDisplayParts([{ type: 'text', content: lessonText }]);
-      setUndoStack([]); setFlashingId(null); setChangelog([]);
-      setSummaryText(''); setGapResults([]); setReanalyzeLoading({});
-      setExpandedRespond(null); setRespondInputs({});
-      setStep('iterative');
-      setLoading(false);
-
-      // Fire both sections in parallel
-      Promise.allSettled([
-        fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-init-activities', lessonText, config }) }).then(r => r.json()),
-        fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-init-exceed', lessonText, config }) }).then(r => r.json()),
-      ]).then(([s1Res, s2Res]) => {
-        if (s1Res.status === 'fulfilled' && s1Res.value?.feedbacks) {
-          setSection1(s1Res.value.feedbacks);
-          setS1InitCount(s1Res.value.feedbacks.length);
-        }
-        setS1Loading(false);
-        if (s2Res.status === 'fulfilled' && s2Res.value?.guide) {
-          setSection2(s2Res.value.guide);
-          setS2InitCount(s2Res.value.guide.length);
-        }
-        setS2Loading(false);
-      });
-      return;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1800, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
-    if (config.mode === 'Focused report') {
-      setLoading(true);
-      try {
-        const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config, selectedLenses: [] }) });
-        const data = await res.json();
-        if (data.feedback) await saveAndShowReport(cu, data.feedback);
-        else alert(data.error || 'Focused report failed.');
-      } catch (e: any) { alert('Network Error: ' + e.message); }
-      setLoading(false); return;
+    // --- ITERATIVE REANALYZE ---
+    if (type === 'iterative-reanalyze') {
+      const { sectionType, sectionName, category } = body;
+      let prompt = '';
+      if (sectionType === 'activity') {
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Re-analyze the "${sectionName}" section in this updated lesson. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
+
+Find the best remaining improvement opportunity for this section. Your "feedback" must be THOROUGH (4–6 sentences) — name the specific pedagogical weakness, reference an educational theory or researcher, explain the direct impact on ${config.profile} learners at Grade ${config.grade} in ${config.subject}. Your "revision" must be a RICH, DETAILED, immediately usable drop-in replacement — specific, concrete, and fully appropriate for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. Quote must be EXACT verbatim substring max 25 words.
+Return ONLY JSON: { "feedback": { "id": "act_r", "sectionName": "${sectionName}", "quote": "...", "feedback": "...", "revision": "...", "priority": "...", "notFound": false } }`;
+      } else {
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Re-analyze the "${category}" framework in this updated lesson. Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
+
+Provide fresh, deeply detailed exceed-expectations guidance. Your "currentLevel" must be a DETAILED honest assessment (3–4 sentences) if hasSection is true. Your "revision" must be RICH and THOROUGH (5–8 sentences minimum) with specific named strategies, concrete classroom moves, and student-facing language appropriate for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. If hasSection true, quote must be EXACT substring max 25 words.
+Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "hasSection": ..., "quote": "...", "currentLevel": "...", "revision": "...", "addWhere": "..." } }`;
+      }
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1800, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
-    const cats = config.mode === 'Custom selection' ? customSelection : ALL_CATS;
-    setLoading(true);
-    try {
-      const results = await Promise.allSettled(chunkArray(cats, 3).map(chunk =>
-        fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config: { ...config, mode: 'Custom selection' }, selectedLenses: chunk }) }).then(r => r.json())
-      ));
-      const merged = results.flatMap(r => r.status === 'fulfilled' && r.value?.feedback ? r.value.feedback : []);
-      if (merged.length > 0) await saveAndShowReport(cu, merged);
-      else alert('All chunks failed. Please try again.');
-    } catch (e: any) { alert('Network Error: ' + e.message); }
-    setLoading(false);
-  };
+    // --- ITERATIVE SUMMARY ---
+    if (type === 'iterative-summary') {
+      const { changelog } = body;
+      const sp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher made these improvements to their Grade ${config.grade} ${config.subject} ${config.profile} lesson (${config.minutes}-minute class):
+${(changelog || []).map((c: any, i: number) => `${i + 1}. [${c.sectionName}] "${c.isAddition ? '(new addition)' : c.quote}" → "${c.revision}"`).join('\n')}
+Write a warm, encouraging 3–4 sentence summary in a "${config.tone}" voice explaining what improved and why it strengthens the lesson for ${config.grade} ${config.profile} students in ${config.minutes} minutes. Be specific. End with one concrete next step appropriate for this class.
+Return ONLY JSON: { "summary": "..." }`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 600, messages: [{ role: 'system', content: sp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
 
-  const handleFollowUp = async (autoText?: string) => {
-    const text = typeof autoText === 'string' ? autoText : chatInput;
-    if (!text?.trim()) return;
-    setChatLoading(true); chatLoadingRef.current = true;
-    const msg = { role: 'user' as const, content: text };
-    setChatHistory(p => [...p, msg]); setChatInput('');
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'chat', userMessage: msg.content, chatHistory: chatHistoryRef.current, config, lessonText, lensContext: selectedLens }) });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setChatHistory(p => [...p, { role: 'assistant' as const, content: data.reply }]);
-    } catch (e: any) { alert('Chat error: ' + e.message); }
-    chatLoadingRef.current = false; setChatLoading(false);
-  };
+    // --- ITERATIVE GAP DETECTOR ---
+    if (type === 'iterative-gap') {
+      const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Review this revised lesson for Grade ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes} minutes. Check if it NOW adequately addresses: 1. Scaffolding, 2. Differentiation, 3. Culturally Responsive Teaching, 4. Engagement, 5. Objectives.
+For each: "category", "adequatelyAddressed" (boolean), "note" (if not adequately addressed — one concrete sentence on what is still missing, written for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes).
+Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`;
+      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 600, messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+      return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
+    }
 
-  const submitQuiz = () => {
-    let score = 0;
-    selectedLens.quiz.forEach((q: any, i: number) => { if (quizAnswers[i] === q.correct) score++; });
-    const status = score === 5 ? 'green' : score >= 3 ? 'amber' : 'red';
-    setLenses(lenses.map((l: any) => l.id === selectedLens.id ? { ...l, status, quizScore: score } : l));
-    setQuizResult(score);
-  };
+    // --- MAIN ANALYSIS ---
+    let reportCommand = 'Full report: return EXACTLY 12 objects for ALL 12 categories (Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure).';
+    if (config.mode.includes('Focused')) reportCommand = 'Focused report: Analyze ONLY the top 3 highest-priority categories.';
+    if (config.mode.includes('Custom')) reportCommand = `Custom selection: Analyze EXACTLY these ${selectedLenses.length} categories: ${selectedLenses.join(', ')}.`;
 
-  const generatePrize = async () => {
-    setPrizeLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prize', lessonText, config }) });
-      const data = await res.json();
-      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Elite Lesson Plan</title></head><body><h1>Elite Lesson Plan</h1><table border="1" style="border-collapse:collapse;width:100%;font-family:Arial;">${Object.entries(data).map(([k, v]) => `<tr><td style="padding:10px;font-weight:bold;background:#f3f4f6;width:25%;vertical-align:top;">${k}</td><td style="padding:10px;vertical-align:top;">${String(v).replace(/\n/g, '<br/>')}</td></tr>`).join('')}</table></body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'Elite_Lesson_Plan.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Prize generation failed'); }
-    setPrizeLoading(false);
-  };
+    const systemPrompt = `You are an Elite Teacher Mentor. Analyze lesson for ${config.grade} ${config.subject} (${config.profile} learners). Tone: "${config.tone}". Time: ${config.minutes}m.
+${reportCommand}
+For each category: theory (90w), lessonFeedback (100w), upgrade (100w), example (150w), quiz (5 MCQs: question, options, correct).
+CATEGORIES: Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure.
+Return JSON: { "feedback":[ { "id", "name", "pioneer", "theory", "lessonFeedback", "upgrade", "example", "quiz" } ] }`;
 
-  const generateMaterializer = async () => {
-    setMaterialLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'materializer', lessonText, config, userMessage: materializerInput }) });
-      const data = await res.json();
-      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Student Handout</title></head><body style="font-family:Arial;padding:20px;">${data.html}</body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'Student_Handout.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Materializer failed'); }
-    setMaterialLoading(false);
-  };
+    const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 16000, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
+    return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
 
-  const generateGamifier = async () => {
-    setGameLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'gamifier', lessonText, config }) });
-      const data = await res.json();
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([data.csv], { type: 'text/csv;charset=utf-8;' })), download: 'Kahoot_Ready_Quiz.csv' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Gamifier failed'); }
-    setGameLoading(false);
-  };
-
-  const generateIEP = async () => {
-    if (!iepInput.trim()) return alert('Enter a student profile first.');
-    setIepLoading(true);
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iep', lessonText, config, userMessage: iepInput }) });
-      const data = await res.json();
-      const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>IEP Scaffold</title></head><body style="font-family:Arial;padding:20px;">${data.html}</body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'IEP_Accommodation.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('IEP generation failed'); }
-    setIepLoading(false);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try { const r = await mammoth.extractRawText({ arrayBuffer: ev.target?.result as ArrayBuffer }); setLessonText(r.value); }
-      catch { alert('Error reading .docx file'); }
-    };
-    reader.readAsArrayBuffer(file); e.target.value = '';
-  };
-
-  const mastery = lenses.length > 0 ? (lenses.filter((l: any) => l.status === 'green').length / lenses.length) * 100 : 0;
-  const s1Resolved = s1InitCount - section1.length;
-  const s2Resolved = s2InitCount - section2.length;
-  const totalResolved = s1Resolved + s2Resolved;
-  const totalCards = s1InitCount + s2InitCount;
-  const progressPct = totalCards > 0 ? (totalResolved / totalCards) * 100 : 0;
-  const allDone = !s1Loading && !s2Loading && section1.length === 0 && section2.length === 0;
-
-  // ===================== ITERATIVE CARD =====================
-  const IterativeCard = ({ item, sectionType, color }: { item: any; sectionType: 'activity' | 'exceed'; color: string }) => {
-    const key = item.id || item.category;
-    const isFlashing = flashingId === key;
-    const isExpanded = expandedRespond === key;
-    const isReanalyzing = reanalyzeLoading[key];
-    const isAddition = sectionType === 'exceed' && !item.hasSection;
-
-    return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: isFlashing ? 0.4 : 1, y: 0, scale: isFlashing ? 0.97 : 1 }}
-        exit={{ opacity: 0, x: 40, transition: { duration: 0.3 } }}
-        className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] overflow-hidden shadow-xl relative"
-        style={{ borderColor: isFlashing ? '#10b981' : 'var(--border)', transition: 'all 0.4s ease' }}
-      >
-        <div className="absolute top-0 left-0 w-1 h-full rounded-l-[2rem]" style={{ backgroundColor: color }} />
-        <div className="p-7 pl-9 space-y-4">
-
-          {/* Header */}
-          <div className="flex items-start justify-between gap-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-widest" style={{ color }}>
-                  {sectionType === 'activity' ? item.sectionName : item.category}
-                </span>
-                {sectionType === 'activity' && (
-                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${item.priority === 'HIGH' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
-                    {item.priority || 'MEDIUM'}
-                  </span>
-                )}
-                {isAddition && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 flex items-center gap-1">
-                    <PlusCircle size={8} /> No Section Found — Add
-                  </span>
-                )}
-                {sectionType === 'exceed' && item.hasSection && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-400 border-indigo-500/30">
-                    Exists — Improve
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{item.pioneer || ''}</p>
-            </div>
-            <button onClick={() => handleDismiss(item, sectionType)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl opacity-40 hover:opacity-100 transition-all flex-shrink-0">
-              <X size={15} />
-            </button>
-          </div>
-
-          {/* Quote or not-found block */}
-          {item.notFound ? (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-400 font-medium">No specific section found in your lesson addressing {item.sectionName}.</p>
-            </div>
-          ) : isAddition ? (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-1">Where to add</p>
-              <p className="text-sm opacity-75">{item.addWhere || 'Add to your lesson plan'}</p>
-            </div>
-          ) : item.quote ? (
-            <div className="rounded-2xl p-4 border italic text-sm font-light opacity-90"
-              style={{ backgroundColor: `${color}10`, borderColor: `${color}25` }}>
-              "{item.quote}"
-            </div>
-          ) : null}
-
-          {/* Feedback / currentLevel */}
-          {sectionType === 'activity' && item.feedback && (
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Feedback</p>
-              <p className="text-sm opacity-75 leading-relaxed">{item.feedback}</p>
-            </div>
-          )}
-          {sectionType === 'exceed' && item.hasSection && item.currentLevel && (
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Current Level</p>
-              <p className="text-sm opacity-75 leading-relaxed">{item.currentLevel}</p>
-            </div>
-          )}
-
-          {/* Revision */}
-          <div className="rounded-2xl p-4 border" style={{ backgroundColor: `${color}10`, borderColor: `${color}25` }}>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color }}>
-              {isAddition ? '✦ Ready to Add' : '✦ Suggested Revision'}
-            </p>
-            <p className="text-sm text-[var(--foreground)] leading-relaxed font-medium">{item.revision}</p>
-          </div>
-
-          {/* Collapsible respond */}
-          <div>
-            <button onClick={() => setExpandedRespond(isExpanded ? null : key)}
-              className="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-80 transition-all flex items-center gap-1">
-              <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-              Respond to this feedback
-            </button>
-            {isExpanded && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 flex gap-2">
-                <input value={respondInputs[key] || ''} onChange={e => setRespondInputs(p => ({ ...p, [key]: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && handleRespond(item, sectionType)}
-                  className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] focus:border-indigo-500/50 rounded-2xl px-4 py-2.5 text-sm outline-none transition-all"
-                  placeholder="e.g. 'Yes, but adjust for ELL...'" />
-                <button onClick={() => handleRespond(item, sectionType)} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all">
-                  <Send size={13} />
-                </button>
-              </motion.div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
-            <button onClick={() => handleAgree(item, sectionType)}
-              className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.25)]">
-              <CheckCircle2 size={14} /> {isAddition ? 'Add to Lesson' : 'I Agree'}
-            </button>
-            <button onClick={() => handleReanalyze(item, sectionType)} disabled={isReanalyzing}
-              className="flex-1 py-3 bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-50 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5">
-              {isReanalyzing ? <RefreshCcw size={13} className="animate-spin" /> : <Zap size={13} />}
-              {isReanalyzing ? 'Analyzing...' : 'Re-analyze'}
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  return (
-    <div className="flex h-screen bg-[var(--background)] text-[var(--foreground)] transition-all duration-300">
-
-      {/* SIDEBAR */}
-      <motion.aside animate={{ width: sidebarOpen ? 300 : 0, opacity: sidebarOpen ? 1 : 0 }} className="glass-sidebar h-full overflow-hidden flex flex-col z-[60]">
-        <div className="p-6 flex flex-col h-full text-white text-left">
-          <button onClick={() => setStep('input')} className="w-full border border-white/10 rounded-xl p-4 flex items-center gap-3 hover:bg-white/5 mb-8 font-bold text-sm shadow-lg">
-            <RefreshCcw size={16} /> New Session
-          </button>
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
-            <span className="text-[10px] font-black uppercase tracking-widest px-2 opacity-50 block mb-4">History</span>
-            {history.map(item => (
-              <button key={item.id} onClick={() => { setLenses(item.lenses); setConfig(item.config); setLessonText(item.lessonText); setStep('dashboard'); }}
-                className="w-full text-left p-3 rounded-lg hover:bg-white/5 text-xs truncate transition-all opacity-70 hover:opacity-100">{item.title}</button>
-            ))}
-          </div>
-          <div className="pt-6 border-t border-white/5 space-y-4">
-            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="w-full flex items-center gap-3 p-3 text-xs font-bold hover:bg-white/5 rounded-lg text-white">Theme Toggle</button>
-            {user && (
-              <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                <img src={user.photoURL ?? ''} className="w-8 h-8 rounded-full" />
-                <span className="text-xs font-bold truncate max-w-[120px]">{user.displayName}</span>
-                <button onClick={() => signOut(auth).then(() => setStep('input'))}><LogOut size={16} /></button>
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.aside>
-
-      <div className="flex-1 flex flex-col overflow-hidden relative">
-        <header className="p-6 flex justify-between items-center z-40 bg-[var(--background)]">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-3 bg-black/5 dark:bg-white/5 rounded-xl border border-[var(--border)] hover:text-indigo-400 shadow-sm"><Menu size={20} /></button>
-          <div className="flex flex-col items-center">
-            <div className="flex items-center gap-2 font-serif italic text-2xl tracking-tighter">
-              <Sparkles className="text-indigo-500" size={24} /> AI Micro-Feedback Coach
-            </div>
-            <div className="w-64 h-1 bg-black/5 dark:bg-white/5 rounded-full mt-2 overflow-hidden border border-[var(--border)]">
-              <motion.div className="h-full bg-emerald-500" style={{ width: `${mastery}%` }} />
-            </div>
-          </div>
-          <div className="w-12 h-12" />
-        </header>
-
-        <main className="flex-1 overflow-y-auto p-6 md:p-12 scrollbar-hide flex flex-col items-center text-center">
-          <AnimatePresence mode="wait">
-
-            {/* ===================== INPUT ===================== */}
-            {step === 'input' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-16 w-full flex flex-col items-center">
-                <div className="text-center space-y-6">
-                  <h2 className="text-6xl md:text-8xl font-serif italic text-[var(--foreground)] leading-[0.8] tracking-tighter">
-                    Instant <br /><span className="font-sans font-black not-italic text-indigo-50 uppercase drop-shadow-[0_0_30px_rgba(99,102,241,0.5)]">Mentorship.</span>
-                  </h2>
-                  <p className="text-indigo-400 font-black text-xs uppercase tracking-[0.6em]">Research-Grounded Coaching for Everyday Lessons</p>
-                </div>
-
-                {/* WHY THIS EXISTS */}
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="w-full max-w-5xl mx-auto"
-                >
-                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2.5rem] p-10 md:p-14 space-y-10">
-
-                    {/* Label + intro */}
-                    <div className="text-center space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-400/70">Why this exists</p>
-                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic leading-relaxed max-w-xl mx-auto">
-                        Before you paste your lesson, we want you to know one thing:
-                      </p>
-                    </div>
-
-                    {/* Two statements side by side */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
-                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
-                        <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
-                          The best lesson plan in the world means nothing if you're too burned out to deliver it.{' '}
-                          <span className="font-semibold text-[var(--foreground)]">
-                            Every hour saved on planning is an hour you show up more present, more energized, more <em>you</em> — and your students feel that.
-                          </span>
-                        </p>
-                      </div>
-
-                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
-                        <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
-                          Every minute you spend on planning is a minute not spent on your students.{' '}
-                          <span className="font-semibold text-[var(--foreground)]">
-                            This tool gives those minutes back — so when you walk into that classroom, you're fully there.
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Closing anchor */}
-                    <div className="text-center pt-4 border-t border-[var(--border)]">
-                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic">
-                        That's what this tool is for. Not to replace you — to make sure your students always get the best of you.
-                      </p>
-                    </div>
-
-                  </div>
-                </motion.div>
-
-                <div className="relative group max-w-4xl w-full">
-                  <div className="absolute -inset-1 bg-indigo-500/10 rounded-3xl blur-xl opacity-70"></div>
-                  <div className="relative bg-[var(--card)] border border-[var(--border)] p-10 rounded-3xl shadow-2xl space-y-8 text-center">
-                    <p className="text-[var(--foreground)] text-lg font-light italic opacity-80 leading-relaxed">Paste a lesson plan. The coach returns supportive feedback where each paragraph:</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-left max-w-3xl mx-auto">
-                      <DescriptionItem text="Names appropriate approach + pioneer in the first sentence." />
-                      <DescriptionItem text="Adapts to grade level, subject area, and learner profile." />
-                      <DescriptionItem text="Attends to class time and your specific phase breakdown." />
-                      <DescriptionItem text="May repeat approaches with explicit pedagogical rationale." />
-                      <div className="md:col-span-2 pt-4 border-t border-[var(--border)] text-center">
-                        <DescriptionItem text="Concludes with a precise 'Concrete example:' for the class window." highlight />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 w-full max-w-5xl mx-auto pt-8">
-                  {CAT_DATA.map(cat => <VividLensTile key={cat.id} cat={cat} />)}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
-                  <FeatureFlipCard icon={<Brain size={24} />} title="Theory Aware" desc="Deep Pedagogy: Every insight is hard-wired into proven research." glow="turquoise" />
-                  <FeatureFlipCard icon={<Clock size={24} />} title="Time Budgeted" desc="Clock-Sync: Routines engineered to fit your exact minutes." glow="yellow" />
-                  <FeatureFlipCard icon={<ShieldCheck size={24} />} title="Mastery Certified" desc="Evidence-Based: Verify growth through mastery check-ins." glow="emerald" />
-                </div>
-                <div className="w-full max-w-[1400px] px-4">
-                  <div className="flex flex-row gap-2 justify-center items-stretch w-full">
-                    <MenuTile label="Tone" value={config.tone} options={['Coaching-style','Supportive','Warm','Direct']} onChange={v => setConfig({ ...config, tone: v })} />
-                    <MenuTile label="Grade" value={config.grade} options={['K–2','3–5','6–8','9–12']} onChange={v => setConfig({ ...config, grade: v })} />
-                    <MenuTile label="Subject" value={config.subject} options={['ELA','Math','Science','Social','Arts']} onChange={v => setConfig({ ...config, subject: v })} />
-                    <MenuTile label="Learners" value={config.profile} options={['General','ELL','Special Ed','Honors']} onChange={v => setConfig({ ...config, profile: v })} />
-                    <MenuTile label="Mode" value={config.mode} options={['Full report','Focused report','Custom selection','Iterative feedback']} onChange={v => setConfig({ ...config, mode: v })} />
-                    <div className="bg-[var(--card)] border border-indigo-500/10 rounded-2xl p-5 flex-1 flex flex-col items-center justify-center shadow-xl hover:border-indigo-500/40 transition-all min-w-[150px] text-center">
-                      <span className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">Minutes</span>
-                      <div className="flex items-center justify-center gap-1.5 w-full">
-                        <Clock size={12} className="text-indigo-500 shrink-0" />
-                        <input type="number" value={config.minutes} onChange={e => setConfig({ ...config, minutes: Number(e.target.value) })} className="bg-transparent text-[var(--foreground)] font-black w-10 text-center outline-none text-sm tracking-tighter" />
-                        <span className="text-[8px] font-bold text-slate-400 uppercase">Min</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {config.mode === 'Custom selection' && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="w-full max-w-6xl pb-8">
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                      {ALL_CATS.map(cat => (
-                        <button key={cat} onClick={() => toggleCustom(cat)}
-                          className={`p-4 rounded-xl border-2 transition-all font-black uppercase text-[10px] tracking-widest ${customSelection.includes(cat) ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl' : 'bg-[var(--card)] border-[var(--border)] text-slate-500 hover:border-indigo-500/30'}`}>
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-                <div className={`bg-[var(--card)] border rounded-[3rem] p-3 shadow-3xl relative overflow-hidden group transition-all duration-1000 w-full max-w-6xl mx-auto ${lessonText ? 'animate-liquid-border' : 'border-[var(--border)]'}`}>
-                  <div className="absolute top-6 right-8 z-10 flex gap-4">
-                    <input type="file" accept=".docx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-black/5 hover:bg-black/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-500 hover:text-indigo-500">
-                      <FileUp size={14} /> Upload .docx
-                    </button>
-                  </div>
-                  <textarea value={lessonText} onChange={e => setLessonText(e.target.value)}
-                    className="w-full h-[400px] bg-transparent border-none p-12 text-2xl text-[var(--foreground)] resize-none outline-none font-light leading-relaxed text-center placeholder:text-slate-300"
-                    placeholder="Paste your lesson plan here or upload a .docx..." />
-                  <div className="p-4 pt-0 flex justify-center">
-                    <motion.button onClick={startAnalysis} disabled={loading} whileHover={{ scale: 1.005 }}
-                      className="relative w-full h-28 bg-[#050508] border border-white/10 text-white rounded-2xl font-black text-2xl uppercase tracking-[0.3em] overflow-hidden shadow-2xl flex items-center justify-center group">
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-20 group-hover:opacity-100 transition-opacity duration-700">
-                        {CAT_DATA.map((c, i) => (
-                          <motion.div key={i} className="w-[2px] h-8 rounded-full" style={{ backgroundColor: c.color }}
-                            animate={{ scaleY: [1, 2.2, 1], opacity: [0.2, 1, 0.2] }}
-                            transition={{ duration: 0.5 + Math.random(), repeat: Infinity, delay: i * 0.1 }} />
-                        ))}
-                      </div>
-                      <span className="relative z-10 flex items-center gap-4 justify-center w-full font-sans tracking-[0.4em]">
-                        {loading ? 'Catalyzing Data...' : 'Launch Feedback'}
-                        {!loading && <ArrowRight className="group-hover:translate-x-2 transition-transform" />}
-                      </span>
-                    </motion.button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ===================== ITERATIVE ===================== */}
-            {step === 'iterative' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[1500px] mx-auto flex flex-col gap-5 text-left" style={{ minHeight: '75vh' }}>
-
-                {/* Top bar */}
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                  <div>
-                    <h3 className="text-3xl font-black font-serif italic tracking-tighter text-[var(--foreground)]">Iterative Review</h3>
-                    <p className="text-xs font-black uppercase tracking-widest text-indigo-400 mt-1">{totalResolved} of {totalCards} feedbacks resolved</p>
-                  </div>
-                  <div className="flex gap-3 items-center flex-wrap">
-                    {undoStack.length > 0 && (
-                      <button onClick={handleUndo} className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-500/20 transition-all">
-                        <RotateCcw size={14} /> Undo Last
-                      </button>
-                    )}
-                    {changelog.length > 0 && (
-                      <button onClick={exportRevisedLesson} className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all">
-                        <Download size={14} /> Export Revised Lesson
-                      </button>
-                    )}
-                    <button onClick={() => setStep('input')} className="flex items-center gap-2 px-4 py-2 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-xl text-xs font-black uppercase tracking-widest hover:border-indigo-500/40 transition-all">
-                      <X size={14} /> Exit
-                    </button>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div className="w-full h-2 bg-black/10 dark:bg-white/5 rounded-full overflow-hidden border border-[var(--border)]">
-                  <motion.div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.5 }} />
-                </div>
-
-                {/* Split pane */}
-                {!allDone && (
-                  <div className="flex flex-col lg:flex-row gap-6" style={{ minHeight: '70vh' }}>
-
-                    {/* LEFT: Document with inline diffs */}
-                    <div className="w-full lg:w-[45%] flex flex-col gap-3 flex-shrink-0">
-                      <h4 className="text-2xl font-serif italic tracking-tighter text-indigo-400">Lesson Document</h4>
-                      <div className="flex-1 bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 overflow-y-auto text-[var(--foreground)] text-base leading-8 font-light shadow-xl" style={{ minHeight: '60vh' }}>
-                        {renderDocument()}
-                      </div>
-                    </div>
-
-                    {/* RIGHT: Both sections stacked */}
-                    <div className="w-full lg:flex-1 flex flex-col gap-5 overflow-y-auto scrollbar-hide" style={{ maxHeight: '82vh' }}>
-
-                      {/* SECTION 1 */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <h4 className="text-2xl font-serif italic tracking-tighter text-emerald-400">Lesson Activity Feedback</h4>
-                          {s1Loading && <RefreshCcw size={16} className="animate-spin text-emerald-400" />}
-                        </div>
-                        {s1Loading ? (
-                          <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-indigo-400 mx-auto mb-3" />
-                            <p className="text-sm opacity-60 font-bold uppercase tracking-widest">Analyzing your lesson activities...</p>
-                          </div>
-                        ) : (
-                          <AnimatePresence>
-                            {section1.map(item => (
-                              <IterativeCard key={item.id || item.sectionName} item={item} sectionType="activity" color="#6366f1" />
-                            ))}
-                          </AnimatePresence>
-                        )}
-                        {!s1Loading && section1.length === 0 && s1InitCount > 0 && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 text-center">
-                            <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-2" />
-                            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">All activity feedback resolved</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* DIVIDER */}
-                      <div className="border-t-2 border-dashed border-[var(--border)] my-2" />
-
-                      {/* SECTION 2 */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-3">
-                          <h4 className="text-2xl font-serif italic tracking-tighter text-[#bc13fe]">Exceed Expectations Guide</h4>
-                          {s2Loading && <RefreshCcw size={16} className="animate-spin text-[#bc13fe]" />}
-                        </div>
-                        <p className="text-xs opacity-50 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
-                        {s2Loading ? (
-                          <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-[#bc13fe] mx-auto mb-3" />
-                            <p className="text-sm opacity-60 font-bold uppercase tracking-widest">Building exceed-expectations guide...</p>
-                          </div>
-                        ) : (
-                          <AnimatePresence>
-                            {section2.map(item => (
-                              <IterativeCard key={item.category} item={item} sectionType="exceed" color={EXCEED_COLORS[item.category] || '#6366f1'} />
-                            ))}
-                          </AnimatePresence>
-                        )}
-                        {!s2Loading && section2.length === 0 && s2InitCount > 0 && (
-                          <div className="bg-[#bc13fe]/10 border border-[#bc13fe]/20 rounded-2xl p-5 text-center">
-                            <CheckCircle2 size={24} className="text-[#bc13fe] mx-auto mb-2" />
-                            <p className="text-xs font-black uppercase tracking-widest text-[#bc13fe]">All frameworks exceeded</p>
-                          </div>
-                        )}
-                      </div>
-
-                    </div>
-                  </div>
-                )}
-
-                {/* COMPLETION PANEL */}
-                {allDone && changelog.length >= 0 && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[3rem] p-10 text-center space-y-8">
-                      <CheckCircle2 size={56} className="text-emerald-500 mx-auto" />
-                      <div>
-                        <h4 className="text-3xl font-black uppercase tracking-widest text-emerald-500 mb-2">
-                          {changelog.length > 0 ? `${changelog.length} Change${changelog.length > 1 ? 's' : ''} Applied` : 'Review Complete'}
-                        </h4>
-                        <p className="text-sm opacity-60">Your lesson has been iteratively improved</p>
-                      </div>
-
-                      {/* Changelog */}
-                      {changelog.length > 0 && (
-                        <div className="text-left space-y-3 max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50 text-center">What Changed</p>
-                          {changelog.map((c, i) => (
-                            <div key={i} className="flex gap-3 items-start p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
-                              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-emerald-500" />
-                              <div>
-                                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 block mb-1">{c.sectionName}</span>
-                                {!c.isAddition && <p className="text-xs opacity-50 line-through mb-1">"{c.quote}"</p>}
-                                {c.isAddition && <p className="text-xs opacity-50 mb-1">(new addition)</p>}
-                                <p className="text-xs font-medium">"{c.revision}"</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Gap Detector */}
-                      {gapResults.length === 0 ? (
-                        <button onClick={handleGapDetect} disabled={gapLoading}
-                          className="px-8 py-4 bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 mx-auto transition-all">
-                          {gapLoading ? <RefreshCcw size={16} className="animate-spin" /> : <AlertTriangle size={16} />}
-                          {gapLoading ? 'Scanning...' : 'Run Lesson Gap Detector'}
-                        </button>
-                      ) : (
-                        <div className="text-left space-y-3 max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50 text-center">Lesson Gap Report</p>
-                          {gapResults.map((g, i) => (
-                            <div key={i} className={`flex gap-3 items-start p-4 rounded-2xl border ${g.adequatelyAddressed ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
-                              {g.adequatelyAddressed ? <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> : <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />}
-                              <div>
-                                <span className={`text-[9px] font-black uppercase tracking-widest block mb-1 ${g.adequatelyAddressed ? 'text-emerald-400' : 'text-amber-400'}`}>{g.category}</span>
-                                {!g.adequatelyAddressed && <p className="text-xs opacity-75">{g.note}</p>}
-                                {g.adequatelyAddressed && <p className="text-xs opacity-60">Adequately addressed ✓</p>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Summary */}
-                      {summaryText ? (
-                        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-6 text-left max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-3">Mentor Summary</p>
-                          <p className="text-sm leading-relaxed opacity-80">{summaryText}</p>
-                        </div>
-                      ) : changelog.length > 0 && (
-                        <button onClick={handleGenerateSummary} disabled={summaryLoading}
-                          className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 mx-auto">
-                          {summaryLoading ? <RefreshCcw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                          {summaryLoading ? 'Generating...' : 'Generate Mentor Summary'}
-                        </button>
-                      )}
-
-                      {/* Next steps */}
-                      <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
-                        <button onClick={exportRevisedLesson}
-                          className="px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-                          <Download size={16} /> Export Revised Lesson (.doc)
-                        </button>
-                        <button onClick={() => { setConfig(c => ({ ...c, mode: 'Full report' })); startAnalysis(); }}
-                          className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2">
-                          <ArrowRight size={16} /> Run Full 12-Category Analysis
-                        </button>
-                        <button onClick={() => setStep('input')} className="px-8 py-4 bg-[var(--card)] border border-[var(--border)] rounded-2xl text-sm font-black uppercase tracking-widest hover:border-indigo-500/40 transition-all">
-                          Return to Input
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-              </motion.div>
-            )}
-
-            {/* ===================== DASHBOARD ===================== */}
-            {step === 'dashboard' && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-16 w-full flex flex-col items-center">
-                <h3 className="text-7xl font-black text-[var(--foreground)] tracking-tighter uppercase font-serif italic underline decoration-indigo-500/60 decoration-8 underline-offset-[20px] text-center">The Blueprint.</h3>
-                {mastery === 100 && (
-                  <div className="flex flex-col md:flex-row gap-6 items-center justify-center w-full z-50 flex-wrap">
-                    <motion.button initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} onClick={generatePrize} disabled={prizeLoading}
-                      className="py-6 px-12 bg-emerald-500 text-white rounded-[2rem] font-black text-2xl shadow-[0_0_40px_rgba(16,185,129,0.5)] animate-pulse uppercase tracking-widest disabled:opacity-50">
-                      {prizeLoading ? 'Forging Elite Doc...' : 'Claim Ultimate Prize: Elite Lesson Plan'}
-                    </motion.button>
-                    <div className="flex flex-col gap-3 items-center w-full md:w-auto">
-                      <input disabled={materialLoading} value={materializerInput} onChange={e => setMaterializerInput(e.target.value)}
-                        className="w-full bg-black/5 dark:bg-white/5 border border-[#00d2ff]/30 text-[var(--foreground)] rounded-2xl p-4 text-center placeholder:text-[#00d2ff]/60 outline-none focus:border-[#00d2ff] transition-all"
-                        placeholder="Custom Instructions (e.g. Gallery Walk, Cut & Paste)..." />
-                      <motion.button initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} onClick={generateMaterializer} disabled={materialLoading}
-                        className="w-full py-6 px-12 bg-[#00d2ff] text-white rounded-[2rem] font-black text-2xl shadow-[0_0_40px_rgba(0,210,255,0.5)] animate-pulse uppercase tracking-widest disabled:opacity-50">
-                        {materialLoading ? 'Materializing...' : 'The Materializer: Generate Handout'}
-                      </motion.button>
-                    </div>
-                    <motion.button initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} onClick={generateGamifier} disabled={gameLoading}
-                      className="py-6 px-12 bg-[#bc13fe] text-white rounded-[2rem] font-black text-2xl shadow-[0_0_40px_rgba(188,19,254,0.5)] animate-pulse uppercase tracking-widest disabled:opacity-50">
-                      {gameLoading ? 'Compiling...' : 'The Gamifier: Export Quiz (.CSV)'}
-                    </motion.button>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pt-10 mx-auto w-full text-left">
-                  {lenses.map(lens => (
-                    <DashboardCard key={lens.id} lens={lens} onClick={() => { setSelectedLens(lens); setDrawerTab('mentoring'); setQuizResult(null); setQuizAnswers({}); setChatHistory([]); }} />
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-          </AnimatePresence>
-        </main>
-      </div>
-
-      {/* SIDE DRAWER */}
-      <AnimatePresence>
-        {selectedLens && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedLens(null)} className="fixed inset-0 bg-black/90 backdrop-blur-md z-[70]" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30 }}
-              className="fixed right-0 top-0 h-full w-full max-w-[850px] bg-[var(--card)] border-l border-[var(--border)] z-[80] flex flex-col shadow-2xl text-left overflow-hidden">
-              <div className="p-12 border-b border-[var(--border)] bg-black/5 dark:bg-white/[0.02]">
-                <div className="flex justify-between items-center mb-8">
-                  <span className="text-xs text-indigo-500 font-black uppercase tracking-[0.5em]">{selectedLens.pioneer}</span>
-                  <button onClick={() => setSelectedLens(null)} className="p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl"><X size={28} /></button>
-                </div>
-                <h2 className="text-5xl font-black text-[var(--foreground)] mb-10 uppercase tracking-tighter leading-none font-serif italic">{selectedLens.name}</h2>
-                <div className="flex gap-4">
-                  <TabBtn active={drawerTab === 'mentoring'} onClick={() => setDrawerTab('mentoring')} icon={<MessageSquare size={16} />} label="Elite Coaching" />
-                  <TabBtn active={drawerTab === 'quiz'} onClick={() => setDrawerTab('quiz')} icon={<Brain size={16} />} label="Mastery Quiz" />
-                </div>
-              </div>
-              <div className="flex-1 p-12 overflow-y-auto space-y-12 pb-40">
-                {drawerTab === 'mentoring' ? (
-                  <div className="space-y-12">
-                    <div className="space-y-12 bg-black/5 p-10 rounded-[3rem] border border-[var(--border)] text-left">
-                      <section><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">I. THE THEORY</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.theory}</p></section>
-                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">II. LESSON FEEDBACK</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.lessonFeedback}</p></section>
-                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">III. THE UPGRADE</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.upgrade}</p></section>
-                    </div>
-                    <div className="p-10 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/20 text-indigo-400 italic text-2xl shadow-inner ring-1 ring-white/5">
-                      <span className="block text-[11px] font-black text-emerald-500 uppercase mb-4 tracking-[0.5em]">IV. INSTRUCTIONAL ROUTINE</span>
-                      {selectedLens.example}
-                    </div>
-                    {selectedLens.name === 'Differentiation' && (
-                      <div className="p-10 bg-[#bc13fe]/10 rounded-[2rem] border border-[#bc13fe]/30 shadow-inner ring-1 ring-white/5 mt-8">
-                        <span className="block text-[11px] font-black text-[#bc13fe] uppercase mb-4 tracking-[0.5em]">IEP / Persona Shapeshifter</span>
-                        <p className="text-sm opacity-80 mb-6">Describe a specific student profile (e.g., "ADHD, struggles with multi-step directions").</p>
-                        <div className="flex gap-4">
-                          <input disabled={iepLoading} value={iepInput} onChange={e => setIepInput(e.target.value)} className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50" placeholder="Student profile..." />
-                          <button disabled={iepLoading} onClick={generateIEP} className="p-6 bg-[#bc13fe] rounded-2xl text-white font-bold text-sm tracking-widest uppercase disabled:opacity-50 shadow-lg">
-                            {iepLoading ? 'Forging...' : 'Download IEP Scaffold'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="space-y-8 pt-12 border-t border-[var(--border)]">
-                      <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">ASK THE MENTOR</h4>
-                      <div className="space-y-6">
-                        {chatHistory.map((m, i) => (
-                          <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
-                            <span className="block text-[9px] font-black uppercase tracking-widest mb-3 opacity-40">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
-                            <span dangerouslySetInnerHTML={{ __html: m.content }} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex gap-4">
-                        <input disabled={chatLoading} value={chatInput} onChange={e => setChatInput(e.target.value)}
-                          className="flex-1 bg-black/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50"
-                          placeholder={chatLoading ? 'Mentor is typing...' : 'Ask a clarification...'}
-                          onKeyDown={e => e.key === 'Enter' && handleFollowUp()} />
-                        <button disabled={chatLoading} onClick={() => handleFollowUp()} className="p-6 bg-indigo-600 rounded-2xl text-white disabled:opacity-50">
-                          {chatLoading ? <RefreshCcw className="animate-spin" /> : <Send />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-12">
-                    {selectedLens.quiz.map((q: any, i: number) => (
-                      <div key={i} className="bg-black/5 p-10 rounded-[3rem] border border-[var(--border)] space-y-6 shadow-md">
-                        <p className="text-[var(--foreground)] text-xl font-bold">{i + 1}. {q.question}</p>
-                        <div className="grid gap-3">
-                          {q.options.map((opt: string) => (
-                            <button key={opt} onClick={() => setQuizAnswers({ ...quizAnswers, [i]: opt })}
-                              className={`p-5 rounded-2xl text-left transition-all border ${quizAnswers[i] === opt ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl' : 'bg-black/5 dark:bg-black/40 border-[var(--border)] opacity-60'}`}>
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    {quizResult === null ? (
-                      <button onClick={submitQuiz} className="w-full py-10 bg-indigo-600 text-white rounded-[3rem] font-black text-2xl shadow-xl">CERTIFY MASTERY</button>
-                    ) : (
-                      <div className="text-center p-20 border-8 border-indigo-500 rounded-[5rem] shadow-xl">
-                        <h4 className="text-9xl font-black mb-4 leading-none">{quizResult}/5</h4>
-                        <p className="text-3xl font-black opacity-60 uppercase tracking-widest">{quizResult === 5 ? 'Mastery Unlocked' : 'Mastery Denied'}</p>
-                        <button onClick={() => setQuizResult(null)} className="mt-12 text-indigo-500 font-black uppercase underline decoration-2 underline-offset-8">Retry Session</button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// --- SUBCOMPONENTS ---
-function MenuTile({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 flex flex-col items-center justify-center shadow-md transition-all hover:border-indigo-500/40 flex-1 min-w-[150px] text-center">
-      <span className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">{label}</span>
-      <select value={value} onChange={e => onChange(e.target.value)} className="bg-transparent text-[var(--foreground)] font-bold text-[11px] outline-none cursor-pointer appearance-none border-none p-0 text-center w-full focus:ring-0 uppercase">
-        {options.map(opt => <option key={opt} value={opt} className="bg-[#0a0a0c]">{opt}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button onClick={onClick} className={`flex items-center gap-3 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-black/5 text-slate-500'}`}>
-      {icon} {label}
-    </button>
-  );
-}
-
-function VividLensTile({ cat }: { cat: any }) {
-  return (
-    <motion.div whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: cat.color, boxShadow: `0 0 50px ${cat.color}88` }}
-      className="bg-black/5 border border-[var(--border)] rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-all h-32 flex-shrink-0 text-center">
-      <div style={{ color: cat.color }} className="drop-shadow-[0_0_10px_currentColor]">{cat.icon}</div>
-      <span className="text-[10px] font-black uppercase text-center opacity-70">{cat.name}</span>
-    </motion.div>
-  );
-}
-
-function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow: 'turquoise' | 'yellow' | 'emerald' }) {
-  const glows: Record<string, string> = { turquoise: 'shadow-[0_0_60px_rgba(0,242,255,0.3)] border-[#00f2ff]/40', yellow: 'shadow-[0_0_60px_rgba(255,255,0,0.4)] border-[#ffff00]/50', emerald: 'shadow-[0_0_60px_rgba(0,255,136,0.3)] border-[#00ff88]/40' };
-  const colors: Record<string, string> = { turquoise: 'text-[#00f2ff]', yellow: 'text-[#d9d900] dark:text-[#ffff00]', emerald: 'text-[#00cc6a] dark:text-[#00ff88]' };
-  return (
-    <div className="perspective-1000 h-64 w-full cursor-pointer group">
-      <motion.div whileHover={{ rotateY: 180 }} transition={{ duration: 0.6 }} className="relative w-full h-full preserve-3d">
-        <div className={`absolute inset-0 backface-hidden bg-[var(--card)] border-2 p-8 rounded-[2.5rem] flex flex-col items-center justify-center gap-6 ${glows[glow]} transition-all duration-500`}>
-          <div className={`p-4 bg-black/5 rounded-2xl ${colors[glow]} drop-shadow-[0_0_15px_currentColor]`}>{icon}</div>
-          <h5 className="font-black text-xl uppercase tracking-tighter text-center">{title}</h5>
-        </div>
-        <div className={`absolute inset-0 backface-hidden rotate-y-180 bg-[var(--card)] border-2 p-8 rounded-[2.5rem] flex items-center justify-center text-center ${glows[glow]}`}>
-          <p className="text-sm font-bold leading-relaxed text-[var(--foreground)] opacity-90 px-4">{desc}</p>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function DashboardCard({ lens, onClick }: { lens: any; onClick: () => void }) {
-  return (
-    <div className="p-10 rounded-[4rem] border border-[var(--border)] transition-all cursor-pointer h-[380px] flex flex-col items-center justify-between shadow-2xl bg-[var(--card)] hover:border-indigo-50/10 dark:hover:border-indigo-500/30" onClick={onClick}>
-      <div className="flex flex-col items-center gap-6 w-full text-center">
-        <div className={`w-6 h-6 rounded-full ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-800'}`} />
-        <div className="w-16 h-16 rounded-2xl bg-black/5 flex items-center justify-center text-indigo-500 shadow-inner"><BookOpen size={28} /></div>
-      </div>
-      <div className="text-center">
-        <h4 className="text-3xl font-black mb-4 uppercase tracking-tighter">{lens.name}</h4>
-        <span className="text-[10px] text-indigo-500 font-black uppercase italic block">{lens.pioneer}</span>
-      </div>
-    </div>
-  );
-}
-
-function DescriptionItem({ text, highlight }: { text: string; highlight?: boolean }) {
-  return (
-    <div className="flex items-start gap-4 text-left">
-      <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${highlight ? 'bg-emerald-500 animate-pulse' : 'bg-indigo-500'}`} />
-      <p className={`text-sm ${highlight ? 'text-[var(--foreground)] font-bold' : 'text-slate-500 dark:text-slate-400'} leading-relaxed`}>{text}</p>
-    </div>
-  );
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
