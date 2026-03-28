@@ -488,24 +488,24 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   {sectionType === 'activity' ? item.sectionName : item.category}
                 </span>
                 {sectionType === 'activity' && (
-                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${item.priority === 'HIGH' ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${item.priority === 'HIGH' ? 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30'}`}>
                     {item.priority || 'MEDIUM'}
                   </span>
                 )}
                 {isAddition && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 flex items-center gap-1">
+                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 flex items-center gap-1">
                     <PlusCircle size={8} /> No Section Found — Add
                   </span>
                 )}
                 {sectionType === 'exceed' && item.hasSection && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-400 border-indigo-500/30">
+                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/30">
                     Exists — Improve
                   </span>
                 )}
               </div>
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{item.pioneer || ''}</p>
+              <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{item.pioneer || ''}</p>
             </div>
-            <button onClick={() => handleDismiss(item, sectionType)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl opacity-40 hover:opacity-100 transition-all flex-shrink-0">
+            <button onClick={() => handleDismiss(item, sectionType)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex-shrink-0">
               <X size={15} />
             </button>
           </div>
@@ -513,12 +513,12 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           {/* Quote or not-found block */}
           {item.notFound ? (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-400 font-medium">No specific section found in your lesson addressing {item.sectionName}.</p>
+              <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">No specific section found in your lesson addressing {item.sectionName}.</p>
             </div>
           ) : isAddition ? (
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400 mb-1">Where to add</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1">Where to add</p>
               <p className="text-sm opacity-75">{item.addWhere || 'Add to your lesson plan'}</p>
             </div>
           ) : item.quote ? (
@@ -531,14 +531,14 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           {/* Feedback / currentLevel */}
           {sectionType === 'activity' && item.feedback && (
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Feedback</p>
-              <p className="text-sm opacity-75 leading-relaxed">{item.feedback}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Feedback</p>
+              <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.feedback}</p>
             </div>
           )}
           {sectionType === 'exceed' && item.hasSection && item.currentLevel && (
             <div>
-              <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Current Level</p>
-              <p className="text-sm opacity-75 leading-relaxed">{item.currentLevel}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Current Level</p>
+              <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.currentLevel}</p>
             </div>
           )}
 
@@ -553,7 +553,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           {/* Collapsible respond */}
           <div>
             <button onClick={() => setExpandedRespond(isExpanded ? null : key)}
-              className="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-80 transition-all flex items-center gap-1">
+              className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:opacity-80 transition-all flex items-center gap-1">
               <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
               Respond to this feedback
             </button>
@@ -597,7 +597,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             <RefreshCcw size={16} /> New Session
           </button>
           <div className="flex-1 overflow-y-auto scrollbar-hide">
-            <span className="text-[10px] font-black uppercase tracking-widest px-2 opacity-50 block mb-4">History</span>
+            <span className="text-[10px] font-black uppercase tracking-widest px-2 opacity-70 block mb-4">History</span>
             {history.map(item => (
               <button key={item.id} onClick={() => { setLenses(item.lenses); setConfig(item.config); setLessonText(item.lessonText); setStep('dashboard'); }}
                 className="w-full text-left p-3 rounded-lg hover:bg-white/5 text-xs truncate transition-all opacity-70 hover:opacity-100">{item.title}</button>
@@ -621,7 +621,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-3 bg-black/5 dark:bg-white/5 rounded-xl border border-[var(--border)] hover:text-indigo-400 shadow-sm"><Menu size={20} /></button>
           <div className="flex flex-col items-center">
             <div className="flex items-center gap-2 font-serif italic text-2xl tracking-tighter">
-              <Sparkles className="text-indigo-500" size={24} /> AI Micro-Feedback Coach
+              <Sparkles className="text-indigo-600 dark:text-indigo-500" size={24} /> AI Micro-Feedback Coach
             </div>
             <div className="w-64 h-1 bg-black/5 dark:bg-white/5 rounded-full mt-2 overflow-hidden border border-[var(--border)]">
               <motion.div className="h-full bg-emerald-500" style={{ width: `${mastery}%` }} />
@@ -638,9 +638,9 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-16 w-full flex flex-col items-center">
                 <div className="text-center space-y-6">
                   <h2 className="text-6xl md:text-8xl font-serif italic text-[var(--foreground)] leading-[0.8] tracking-tighter">
-                    Instant <br /><span className="font-sans font-black not-italic text-indigo-50 uppercase drop-shadow-[0_0_30px_rgba(99,102,241,0.5)]">Mentorship.</span>
+                    Instant <br /><span className="font-sans font-black not-italic text-indigo-600 dark:text-indigo-50 uppercase dark:drop-shadow-[0_0_30px_rgba(99,102,241,0.5)]">Mentorship.</span>
                   </h2>
-                  <p className="text-indigo-400 font-black text-xs uppercase tracking-[0.6em]">Research-Grounded Coaching for Everyday Lessons</p>
+                  <p className="text-indigo-600 dark:text-indigo-400 font-black text-xs uppercase tracking-[0.6em]">Research-Grounded Coaching for Everyday Lessons</p>
                 </div>
 
                 {/* WHY THIS EXISTS */}
@@ -654,7 +654,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 
                     {/* Label + intro */}
                     <div className="text-center space-y-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-400/70">Why this exists</p>
+                      <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-600/70 dark:text-indigo-400/70">Why this exists</p>
                       <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic leading-relaxed max-w-xl mx-auto">
                         Before you paste your lesson, we want you to know one thing:
                       </p>
@@ -694,7 +694,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 <div className="relative group max-w-4xl w-full">
                   <div className="absolute -inset-1 bg-indigo-500/10 rounded-3xl blur-xl opacity-70"></div>
                   <div className="relative bg-[var(--card)] border border-[var(--border)] p-10 rounded-3xl shadow-2xl space-y-8 text-center">
-                    <p className="text-[var(--foreground)] text-lg font-light italic opacity-80 leading-relaxed">Paste a lesson plan. The coach returns supportive feedback where each paragraph:</p>
+                    <p className="text-[var(--foreground)] text-lg font-light italic opacity-70 leading-relaxed">Paste a lesson plan. The coach returns supportive feedback where each paragraph:</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-left max-w-3xl mx-auto">
                       <DescriptionItem text="Names appropriate approach + pioneer in the first sentence." />
                       <DescriptionItem text="Adapts to grade level, subject area, and learner profile." />
@@ -707,7 +707,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 w-full max-w-5xl mx-auto pt-8">
-                  {CAT_DATA.map(cat => <VividLensTile key={cat.id} cat={cat} />)}
+                  {CAT_DATA.map(cat => <VividLensTile key={cat.id} cat={cat} theme={theme} />)}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
                   <FeatureFlipCard icon={<Brain size={24} />} title="Theory Aware" desc="Deep Pedagogy: Every insight is hard-wired into proven research." glow="turquoise" />
@@ -722,9 +722,9 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     <MenuTile label="Learners" value={config.profile} options={['General','ELL','Special Ed','Honors']} onChange={v => setConfig({ ...config, profile: v })} />
                     <MenuTile label="Mode" value={config.mode} options={['Full report','Focused report','Custom selection','Iterative feedback']} onChange={v => setConfig({ ...config, mode: v })} />
                     <div className="bg-[var(--card)] border border-indigo-500/10 rounded-2xl p-5 flex-1 flex flex-col items-center justify-center shadow-xl hover:border-indigo-500/40 transition-all min-w-[150px] text-center">
-                      <span className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">Minutes</span>
+                      <span className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 mb-3 tracking-widest">Minutes</span>
                       <div className="flex items-center justify-center gap-1.5 w-full">
-                        <Clock size={12} className="text-indigo-500 shrink-0" />
+                        <Clock size={12} className="text-indigo-600 dark:text-indigo-500 shrink-0" />
                         <input type="number" value={config.minutes} onChange={e => setConfig({ ...config, minutes: Number(e.target.value) })} className="bg-transparent text-[var(--foreground)] font-black w-10 text-center outline-none text-sm tracking-tighter" />
                         <span className="text-[8px] font-bold text-slate-400 uppercase">Min</span>
                       </div>
@@ -746,7 +746,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 <div className={`bg-[var(--card)] border rounded-[3rem] p-3 shadow-3xl relative overflow-hidden group transition-all duration-1000 w-full max-w-6xl mx-auto ${lessonText ? 'animate-liquid-border' : 'border-[var(--border)]'}`}>
                   <div className="absolute top-6 right-8 z-10 flex gap-4">
                     <input type="file" accept=".docx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-black/5 hover:bg-black/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-500 hover:text-indigo-500">
+                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-black/5 hover:bg-black/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-600 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-500">
                       <FileUp size={14} /> Upload .docx
                     </button>
                   </div>
@@ -781,16 +781,16 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
                     <h3 className="text-3xl font-black font-serif italic tracking-tighter text-[var(--foreground)]">Iterative Review</h3>
-                    <p className="text-xs font-black uppercase tracking-widest text-indigo-400 mt-1">{totalResolved} of {totalCards} feedbacks resolved</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mt-1">{totalResolved} of {totalCards} feedbacks resolved</p>
                   </div>
                   <div className="flex gap-3 items-center flex-wrap">
                     {undoStack.length > 0 && (
-                      <button onClick={handleUndo} className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-500/20 transition-all">
+                      <button onClick={handleUndo} className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-500/20 transition-all">
                         <RotateCcw size={14} /> Undo Last
                       </button>
                     )}
                     {changelog.length > 0 && (
-                      <button onClick={exportRevisedLesson} className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all">
+                      <button onClick={exportRevisedLesson} className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all">
                         <Download size={14} /> Export Revised Lesson
                       </button>
                     )}
@@ -811,7 +811,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 
                     {/* LEFT: Document with inline diffs */}
                     <div className="w-full lg:w-[45%] flex flex-col gap-3 flex-shrink-0">
-                      <h4 className="text-2xl font-serif italic tracking-tighter text-indigo-400">Lesson Document</h4>
+                      <h4 className="text-2xl font-serif italic tracking-tighter text-indigo-600 dark:text-indigo-400">Lesson Document</h4>
                       <div className="flex-1 bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 overflow-y-auto text-[var(--foreground)] text-base leading-8 font-light shadow-xl" style={{ minHeight: '60vh' }}>
                         {renderDocument()}
                       </div>
@@ -823,13 +823,13 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       {/* SECTION 1 */}
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                          <h4 className="text-2xl font-serif italic tracking-tighter text-emerald-400">Lesson Activity Feedback</h4>
-                          {s1Loading && <RefreshCcw size={16} className="animate-spin text-emerald-400" />}
+                          <h4 className="text-2xl font-serif italic tracking-tighter text-emerald-600 dark:text-emerald-400">Lesson Activity Feedback</h4>
+                          {s1Loading && <RefreshCcw size={16} className="animate-spin text-emerald-600 dark:text-emerald-400" />}
                         </div>
                         {s1Loading ? (
                           <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-indigo-400 mx-auto mb-3" />
-                            <p className="text-sm opacity-60 font-bold uppercase tracking-widest">Analyzing your lesson activities...</p>
+                            <RefreshCcw size={24} className="animate-spin text-indigo-600 dark:text-indigo-400 mx-auto mb-3" />
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Analyzing your lesson activities...</p>
                           </div>
                         ) : (
                           <AnimatePresence>
@@ -839,9 +839,9 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           </AnimatePresence>
                         )}
                         {!s1Loading && section1.length === 0 && s1InitCount > 0 && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 text-center">
-                            <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-2" />
-                            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">All activity feedback resolved</p>
+                          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl p-5 text-center">
+                            <CheckCircle2 size={24} className="text-emerald-600 dark:text-emerald-500 mx-auto mb-2" />
+                            <p className="text-xs font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-500">All activity feedback resolved</p>
                           </div>
                         )}
                       </div>
@@ -852,14 +852,14 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       {/* SECTION 2 */}
                       <div className="space-y-4">
                         <div className="flex items-center gap-3">
-                          <h4 className="text-2xl font-serif italic tracking-tighter text-[#bc13fe]">Exceed Expectations Guide</h4>
-                          {s2Loading && <RefreshCcw size={16} className="animate-spin text-[#bc13fe]" />}
+                          <h4 className="text-2xl font-serif italic tracking-tighter text-purple-700 dark:text-[#bc13fe]">Exceed Expectations Guide</h4>
+                          {s2Loading && <RefreshCcw size={16} className="animate-spin text-purple-700 dark:text-[#bc13fe]" />}
                         </div>
-                        <p className="text-xs opacity-50 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 opacity-80 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
                         {s2Loading ? (
                           <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-[#bc13fe] mx-auto mb-3" />
-                            <p className="text-sm opacity-60 font-bold uppercase tracking-widest">Building exceed-expectations guide...</p>
+                            <RefreshCcw size={24} className="animate-spin text-purple-700 dark:text-[#bc13fe] mx-auto mb-3" />
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Building exceed-expectations guide...</p>
                           </div>
                         ) : (
                           <AnimatePresence>
@@ -869,9 +869,9 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           </AnimatePresence>
                         )}
                         {!s2Loading && section2.length === 0 && s2InitCount > 0 && (
-                          <div className="bg-[#bc13fe]/10 border border-[#bc13fe]/20 rounded-2xl p-5 text-center">
-                            <CheckCircle2 size={24} className="text-[#bc13fe] mx-auto mb-2" />
-                            <p className="text-xs font-black uppercase tracking-widest text-[#bc13fe]">All frameworks exceeded</p>
+                          <div className="bg-purple-50 dark:bg-[#bc13fe]/10 border border-purple-200 dark:border-[#bc13fe]/20 rounded-2xl p-5 text-center">
+                            <CheckCircle2 size={24} className="text-purple-700 dark:text-[#bc13fe] mx-auto mb-2" />
+                            <p className="text-xs font-black uppercase tracking-widest text-purple-700 dark:text-[#bc13fe]">All frameworks exceeded</p>
                           </div>
                         )}
                       </div>
@@ -883,24 +883,24 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 {/* COMPLETION PANEL */}
                 {allDone && changelog.length >= 0 && (
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[3rem] p-10 text-center space-y-8">
-                      <CheckCircle2 size={56} className="text-emerald-500 mx-auto" />
+                    <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-[3rem] p-10 text-center space-y-8">
+                      <CheckCircle2 size={56} className="text-emerald-600 dark:text-emerald-500 mx-auto" />
                       <div>
-                        <h4 className="text-3xl font-black uppercase tracking-widest text-emerald-500 mb-2">
+                        <h4 className="text-3xl font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-500 mb-2">
                           {changelog.length > 0 ? `${changelog.length} Change${changelog.length > 1 ? 's' : ''} Applied` : 'Review Complete'}
                         </h4>
-                        <p className="text-sm opacity-60">Your lesson has been iteratively improved</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Your lesson has been iteratively improved</p>
                       </div>
 
                       {/* Changelog */}
                       {changelog.length > 0 && (
                         <div className="text-left space-y-3 max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50 text-center">What Changed</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-80 text-center">What Changed</p>
                           {changelog.map((c, i) => (
                             <div key={i} className="flex gap-3 items-start p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
                               <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-emerald-500" />
                               <div>
-                                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 block mb-1">{c.sectionName}</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 block mb-1">{c.sectionName}</span>
                                 {!c.isAddition && <p className="text-xs opacity-50 line-through mb-1">"{c.quote}"</p>}
                                 {c.isAddition && <p className="text-xs opacity-50 mb-1">(new addition)</p>}
                                 <p className="text-xs font-medium">"{c.revision}"</p>
@@ -913,20 +913,20 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       {/* Gap Detector */}
                       {gapResults.length === 0 ? (
                         <button onClick={handleGapDetect} disabled={gapLoading}
-                          className="px-8 py-4 bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 mx-auto transition-all">
+                          className="px-8 py-4 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 mx-auto transition-all">
                           {gapLoading ? <RefreshCcw size={16} className="animate-spin" /> : <AlertTriangle size={16} />}
                           {gapLoading ? 'Scanning...' : 'Run Lesson Gap Detector'}
                         </button>
                       ) : (
                         <div className="text-left space-y-3 max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50 text-center">Lesson Gap Report</p>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-80 text-center">Lesson Gap Report</p>
                           {gapResults.map((g, i) => (
                             <div key={i} className={`flex gap-3 items-start p-4 rounded-2xl border ${g.adequatelyAddressed ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
-                              {g.adequatelyAddressed ? <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /> : <AlertTriangle size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />}
+                              {g.adequatelyAddressed ? <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-500 flex-shrink-0 mt-0.5" /> : <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />}
                               <div>
-                                <span className={`text-[9px] font-black uppercase tracking-widest block mb-1 ${g.adequatelyAddressed ? 'text-emerald-400' : 'text-amber-400'}`}>{g.category}</span>
+                                <span className={`text-[9px] font-black uppercase tracking-widest block mb-1 ${g.adequatelyAddressed ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>{g.category}</span>
                                 {!g.adequatelyAddressed && <p className="text-xs opacity-75">{g.note}</p>}
-                                {g.adequatelyAddressed && <p className="text-xs opacity-60">Adequately addressed ✓</p>}
+                                {g.adequatelyAddressed && <p className="text-xs text-slate-500 dark:text-slate-400">Adequately addressed ✓</p>}
                               </div>
                             </div>
                           ))}
@@ -935,8 +935,8 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 
                       {/* Summary */}
                       {summaryText ? (
-                        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl p-6 text-left max-w-3xl mx-auto">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-3">Mentor Summary</p>
+                        <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-6 text-left max-w-3xl mx-auto">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-3">Mentor Summary</p>
                           <p className="text-sm leading-relaxed opacity-80">{summaryText}</p>
                         </div>
                       ) : changelog.length > 0 && (
@@ -971,7 +971,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             {/* ===================== DASHBOARD ===================== */}
             {step === 'dashboard' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-16 w-full flex flex-col items-center">
-                <h3 className="text-7xl font-black text-[var(--foreground)] tracking-tighter uppercase font-serif italic underline decoration-indigo-500/60 decoration-8 underline-offset-[20px] text-center">The Blueprint.</h3>
+                <h3 className="text-7xl font-black text-[var(--foreground)] tracking-tighter uppercase font-serif italic underline decoration-indigo-400 dark:decoration-indigo-500/60 decoration-8 underline-offset-[20px] text-center">The Blueprint.</h3>
                 {mastery === 100 && (
                   <div className="flex flex-col md:flex-row gap-6 items-center justify-center w-full z-50 flex-wrap">
                     <motion.button initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} onClick={generatePrize} disabled={prizeLoading}
@@ -1014,7 +1014,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
               className="fixed right-0 top-0 h-full w-full max-w-[850px] bg-[var(--card)] border-l border-[var(--border)] z-[80] flex flex-col shadow-2xl text-left overflow-hidden">
               <div className="p-12 border-b border-[var(--border)] bg-black/[0.02] dark:bg-white/[0.02]">
                 <div className="flex justify-between items-center mb-8">
-                  <span className="text-xs text-indigo-500 font-black uppercase tracking-[0.5em]">{selectedLens.pioneer}</span>
+                  <span className="text-xs text-indigo-600 dark:text-indigo-500 font-black uppercase tracking-[0.5em]">{selectedLens.pioneer}</span>
                   <button onClick={() => setSelectedLens(null)} className="p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl"><X size={28} /></button>
                 </div>
                 <h2 className="text-5xl font-black text-[var(--foreground)] mb-10 uppercase tracking-tighter leading-none font-serif italic">{selectedLens.name}</h2>
@@ -1027,18 +1027,18 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 {drawerTab === 'mentoring' ? (
                   <div className="space-y-12">
                     <div className="space-y-12 bg-black/[0.03] dark:bg-white/[0.01] p-10 rounded-[3rem] border border-[var(--border)] text-left">
-                      <section><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">I. THE THEORY</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.theory}</p></section>
-                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">II. LESSON FEEDBACK</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.lessonFeedback}</p></section>
-                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">III. THE UPGRADE</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.upgrade}</p></section>
+                      <section><h5 className="text-indigo-600 dark:text-indigo-400 uppercase text-[10px] font-black mb-4">I. THE THEORY</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.theory}</p></section>
+                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-600 dark:text-indigo-400 uppercase text-[10px] font-black mb-4">II. LESSON FEEDBACK</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.lessonFeedback}</p></section>
+                      <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-600 dark:text-indigo-400 uppercase text-[10px] font-black mb-4">III. THE UPGRADE</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.upgrade}</p></section>
                     </div>
                     <div className="p-10 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/20 text-indigo-700 dark:text-indigo-400 italic text-2xl shadow-inner ring-1 ring-black/5 dark:ring-white/5">
-                      <span className="block text-[11px] font-black text-emerald-500 uppercase mb-4 tracking-[0.5em]">IV. INSTRUCTIONAL ROUTINE</span>
+                      <span className="block text-[11px] font-black text-emerald-700 dark:text-emerald-500 uppercase mb-4 tracking-[0.5em]">IV. INSTRUCTIONAL ROUTINE</span>
                       {selectedLens.example}
                     </div>
                     {selectedLens.name === 'Differentiation' && (
                       <div className="p-10 bg-[#bc13fe]/10 rounded-[2rem] border border-[#bc13fe]/30 shadow-inner ring-1 ring-black/5 dark:ring-white/5 mt-8">
-                        <span className="block text-[11px] font-black text-[#bc13fe] uppercase mb-4 tracking-[0.5em]">IEP / Persona Shapeshifter</span>
-                        <p className="text-sm opacity-80 mb-6">Describe a specific student profile (e.g., "ADHD, struggles with multi-step directions").</p>
+                        <span className="block text-[11px] font-black text-purple-700 dark:text-[#bc13fe] uppercase mb-4 tracking-[0.5em]">IEP / Persona Shapeshifter</span>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">Describe a specific student profile (e.g., "ADHD, struggles with multi-step directions").</p>
                         <div className="flex gap-4">
                           <input disabled={iepLoading} value={iepInput} onChange={e => setIepInput(e.target.value)} className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50" placeholder="Student profile..." />
                           <button disabled={iepLoading} onClick={generateIEP} className="p-6 bg-[#bc13fe] rounded-2xl text-white font-bold text-sm tracking-widest uppercase disabled:opacity-50 shadow-lg">
@@ -1048,18 +1048,18 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       </div>
                     )}
                     <div className="space-y-8 pt-12 border-t border-[var(--border)]">
-                      <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">ASK THE MENTOR</h4>
+                      <h4 className="font-black uppercase text-[10px] tracking-widest text-slate-500 dark:text-slate-400 opacity-80">ASK THE MENTOR</h4>
                       <div className="space-y-6">
                         {chatHistory.map((m, i) => (
                           <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-700 dark:text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
-                            <span className="block text-[9px] font-black uppercase tracking-widest mb-3 opacity-40">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
+                            <span className="block text-[9px] font-black uppercase tracking-widest mb-3 text-slate-500 dark:text-slate-400">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
                             <span dangerouslySetInnerHTML={{ __html: m.content }} />
                           </div>
                         ))}
                       </div>
                       <div className="flex gap-4">
                         <input disabled={chatLoading} value={chatInput} onChange={e => setChatInput(e.target.value)}
-                          className="flex-1 bg-black/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50"
+                          className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50 focus:outline-none focus:border-indigo-400 transition-all"
                           placeholder={chatLoading ? 'Mentor is typing...' : 'Ask a clarification...'}
                           onKeyDown={e => e.key === 'Enter' && handleFollowUp()} />
                         <button disabled={chatLoading} onClick={() => handleFollowUp()} className="p-6 bg-indigo-600 rounded-2xl text-white disabled:opacity-50">
@@ -1088,8 +1088,8 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     ) : (
                       <div className="text-center p-20 border-8 border-indigo-500 rounded-[5rem] shadow-xl">
                         <h4 className="text-9xl font-black mb-4 leading-none">{quizResult}/5</h4>
-                        <p className="text-3xl font-black opacity-60 uppercase tracking-widest">{quizResult === 5 ? 'Mastery Unlocked' : 'Mastery Denied'}</p>
-                        <button onClick={() => setQuizResult(null)} className="mt-12 text-indigo-500 font-black uppercase underline decoration-2 underline-offset-8">Retry Session</button>
+                        <p className="text-3xl font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">{quizResult === 5 ? 'Mastery Unlocked' : 'Mastery Denied'}</p>
+                        <button onClick={() => setQuizResult(null)} className="mt-12 text-indigo-600 dark:text-indigo-500 font-black uppercase underline decoration-2 underline-offset-8">Retry Session</button>
                       </div>
                     )}
                   </div>
@@ -1107,7 +1107,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 function MenuTile({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 flex flex-col items-center justify-center shadow-md transition-all hover:border-indigo-500/40 flex-1 min-w-[150px] text-center">
-      <span className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">{label}</span>
+      <span className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 mb-3 tracking-widest">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} className="bg-transparent text-[var(--foreground)] font-bold text-[11px] outline-none cursor-pointer appearance-none border-none p-0 text-center w-full focus:ring-0 uppercase">
         {options.map(opt => <option key={opt} value={opt} className="bg-[var(--card)] text-[var(--foreground)]">{opt}</option>)}
       </select>
@@ -1123,24 +1123,33 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
   );
 }
 
-function VividLensTile({ cat }: { cat: any }) {
+function VividLensTile({ cat, theme }: { cat: any; theme: string }) {
   return (
-    <motion.div whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: cat.color, boxShadow: `0 0 50px ${cat.color}88` }}
-      className="bg-black/5 border border-[var(--border)] rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-all h-32 flex-shrink-0 text-center">
-      <div style={{ color: cat.color }} className="drop-shadow-[0_0_10px_currentColor]">{cat.icon}</div>
-      <span className="text-[10px] font-black uppercase text-center opacity-70">{cat.name}</span>
+    <motion.div
+      whileHover={{
+        backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.05)',
+        borderColor: theme === 'dark' ? cat.color : `${cat.color}99`,
+        boxShadow: theme === 'dark' ? `0 0 50px ${cat.color}88` : `0 0 16px ${cat.color}33`,
+      }}
+      className="bg-black/5 dark:bg-white/[0.02] border border-[var(--border)] rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-all h-32 flex-shrink-0 text-center cursor-pointer">
+      <div style={{ color: theme === 'dark' ? cat.color : cat.color }} className="dark:drop-shadow-[0_0_10px_currentColor]">{cat.icon}</div>
+      <span className="text-[10px] font-black uppercase text-center text-slate-600 dark:text-slate-300">{cat.name}</span>
     </motion.div>
   );
 }
 
 function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow: 'turquoise' | 'yellow' | 'emerald' }) {
-  const glows: Record<string, string> = { turquoise: 'shadow-[0_0_60px_rgba(0,242,255,0.3)] border-[#00f2ff]/40', yellow: 'shadow-[0_0_60px_rgba(255,255,0,0.4)] border-[#ffff00]/50', emerald: 'shadow-[0_0_60px_rgba(0,255,136,0.3)] border-[#00ff88]/40' };
+  const glows: Record<string, string> = {
+    turquoise: 'dark:shadow-[0_0_60px_rgba(0,242,255,0.3)] shadow-[0_4px_20px_rgba(0,190,215,0.15)] border-[#00b8d4] dark:border-[#00f2ff]/40',
+    yellow: 'dark:shadow-[0_0_60px_rgba(255,255,0,0.4)] shadow-[0_4px_20px_rgba(180,150,0,0.15)] border-[#a89000] dark:border-[#ffff00]/50',
+    emerald: 'dark:shadow-[0_0_60px_rgba(0,255,136,0.3)] shadow-[0_4px_20px_rgba(0,160,85,0.15)] border-[#00a855] dark:border-[#00ff88]/40',
+  };
   const colors: Record<string, string> = { turquoise: 'text-[#0099bb] dark:text-[#00f2ff]', yellow: 'text-[#a89200] dark:text-[#ffff00]', emerald: 'text-[#00884a] dark:text-[#00ff88]' };
   return (
     <div className="perspective-1000 h-64 w-full cursor-pointer group">
       <motion.div whileHover={{ rotateY: 180 }} transition={{ duration: 0.6 }} className="relative w-full h-full preserve-3d">
         <div className={`absolute inset-0 backface-hidden bg-[var(--card)] border-2 p-8 rounded-[2.5rem] flex flex-col items-center justify-center gap-6 ${glows[glow]} transition-all duration-500`}>
-          <div className={`p-4 bg-black/5 rounded-2xl ${colors[glow]} drop-shadow-[0_0_15px_currentColor]`}>{icon}</div>
+          <div className={`p-4 bg-black/5 dark:bg-white/5 rounded-2xl ${colors[glow]} dark:drop-shadow-[0_0_15px_currentColor]`}>{icon}</div>
           <h5 className="font-black text-xl uppercase tracking-tighter text-center">{title}</h5>
         </div>
         <div className={`absolute inset-0 backface-hidden rotate-y-180 bg-[var(--card)] border-2 p-8 rounded-[2.5rem] flex items-center justify-center text-center ${glows[glow]}`}>
@@ -1156,11 +1165,11 @@ function DashboardCard({ lens, onClick }: { lens: any; onClick: () => void }) {
     <div className="p-10 rounded-[4rem] border border-[var(--border)] transition-all cursor-pointer h-[380px] flex flex-col items-center justify-between shadow-2xl bg-[var(--card)] hover:border-indigo-300/60 dark:hover:border-indigo-500/30" onClick={onClick}>
       <div className="flex flex-col items-center gap-6 w-full text-center">
         <div className={`w-6 h-6 rounded-full ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-700'}`} />
-        <div className="w-16 h-16 rounded-2xl bg-black/5 flex items-center justify-center text-indigo-500 shadow-inner"><BookOpen size={28} /></div>
+        <div className="w-16 h-16 rounded-2xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-indigo-600 dark:text-indigo-500 shadow-inner"><BookOpen size={28} /></div>
       </div>
       <div className="text-center">
         <h4 className="text-3xl font-black mb-4 uppercase tracking-tighter">{lens.name}</h4>
-        <span className="text-[10px] text-indigo-500 font-black uppercase italic block">{lens.pioneer}</span>
+        <span className="text-[10px] text-indigo-600 dark:text-indigo-500 font-black uppercase italic block">{lens.pioneer}</span>
       </div>
     </div>
   );
@@ -1169,8 +1178,8 @@ function DashboardCard({ lens, onClick }: { lens: any; onClick: () => void }) {
 function DescriptionItem({ text, highlight }: { text: string; highlight?: boolean }) {
   return (
     <div className="flex items-start gap-4 text-left">
-      <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${highlight ? 'bg-emerald-500 animate-pulse' : 'bg-indigo-500'}`} />
-      <p className={`text-sm ${highlight ? 'text-[var(--foreground)] font-bold' : 'text-slate-500 dark:text-slate-400'} leading-relaxed`}>{text}</p>
+      <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${highlight ? 'bg-emerald-600 dark:bg-emerald-500 animate-pulse' : 'bg-indigo-500 dark:bg-indigo-400'}`} />
+      <p className={`text-sm ${highlight ? 'text-[var(--foreground)] font-bold' : 'text-slate-600 dark:text-slate-400'} leading-relaxed`}>{text}</p>
     </div>
   );
 }
