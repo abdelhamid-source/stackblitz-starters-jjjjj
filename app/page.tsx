@@ -751,11 +751,11 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     </button>
                   </div>
                   <textarea value={lessonText} onChange={e => setLessonText(e.target.value)}
-                    className="w-full h-[400px] bg-transparent border-none p-12 text-2xl text-[var(--foreground)] resize-none outline-none font-light leading-relaxed text-center placeholder:text-slate-300"
+                    className="w-full h-[400px] bg-transparent border-none p-12 text-2xl text-[var(--foreground)] resize-none outline-none font-light leading-relaxed text-center placeholder:text-slate-400 dark:placeholder:text-slate-600"
                     placeholder="Paste your lesson plan here or upload a .docx..." />
                   <div className="p-4 pt-0 flex justify-center">
                     <motion.button onClick={startAnalysis} disabled={loading} whileHover={{ scale: 1.005 }}
-                      className="relative w-full h-28 bg-[#050508] border border-white/10 text-white rounded-2xl font-black text-2xl uppercase tracking-[0.3em] overflow-hidden shadow-2xl flex items-center justify-center group">
+                      className="relative w-full h-28 bg-[#050508] border border-black/10 dark:border-white/10 text-white rounded-2xl font-black text-2xl uppercase tracking-[0.3em] overflow-hidden shadow-2xl flex items-center justify-center group">
                       <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-20 group-hover:opacity-100 transition-opacity duration-700">
                         {CAT_DATA.map((c, i) => (
                           <motion.div key={i} className="w-[2px] h-8 rounded-full" style={{ backgroundColor: c.color }}
@@ -1012,7 +1012,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedLens(null)} className="fixed inset-0 bg-black/90 backdrop-blur-md z-[70]" />
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 30 }}
               className="fixed right-0 top-0 h-full w-full max-w-[850px] bg-[var(--card)] border-l border-[var(--border)] z-[80] flex flex-col shadow-2xl text-left overflow-hidden">
-              <div className="p-12 border-b border-[var(--border)] bg-black/5 dark:bg-white/[0.02]">
+              <div className="p-12 border-b border-[var(--border)] bg-black/[0.02] dark:bg-white/[0.02]">
                 <div className="flex justify-between items-center mb-8">
                   <span className="text-xs text-indigo-500 font-black uppercase tracking-[0.5em]">{selectedLens.pioneer}</span>
                   <button onClick={() => setSelectedLens(null)} className="p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl"><X size={28} /></button>
@@ -1026,17 +1026,17 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
               <div className="flex-1 p-12 overflow-y-auto space-y-12 pb-40">
                 {drawerTab === 'mentoring' ? (
                   <div className="space-y-12">
-                    <div className="space-y-12 bg-black/5 p-10 rounded-[3rem] border border-[var(--border)] text-left">
+                    <div className="space-y-12 bg-black/[0.03] dark:bg-white/[0.01] p-10 rounded-[3rem] border border-[var(--border)] text-left">
                       <section><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">I. THE THEORY</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.theory}</p></section>
                       <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">II. LESSON FEEDBACK</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.lessonFeedback}</p></section>
                       <section className="pt-10 border-t border-[var(--border)]"><h5 className="text-indigo-400 uppercase text-[10px] font-black mb-4">III. THE UPGRADE</h5><p className="text-2xl font-light leading-relaxed">{selectedLens.upgrade}</p></section>
                     </div>
-                    <div className="p-10 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/20 text-indigo-400 italic text-2xl shadow-inner ring-1 ring-white/5">
+                    <div className="p-10 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/20 text-indigo-700 dark:text-indigo-400 italic text-2xl shadow-inner ring-1 ring-black/5 dark:ring-white/5">
                       <span className="block text-[11px] font-black text-emerald-500 uppercase mb-4 tracking-[0.5em]">IV. INSTRUCTIONAL ROUTINE</span>
                       {selectedLens.example}
                     </div>
                     {selectedLens.name === 'Differentiation' && (
-                      <div className="p-10 bg-[#bc13fe]/10 rounded-[2rem] border border-[#bc13fe]/30 shadow-inner ring-1 ring-white/5 mt-8">
+                      <div className="p-10 bg-[#bc13fe]/10 rounded-[2rem] border border-[#bc13fe]/30 shadow-inner ring-1 ring-black/5 dark:ring-white/5 mt-8">
                         <span className="block text-[11px] font-black text-[#bc13fe] uppercase mb-4 tracking-[0.5em]">IEP / Persona Shapeshifter</span>
                         <p className="text-sm opacity-80 mb-6">Describe a specific student profile (e.g., "ADHD, struggles with multi-step directions").</p>
                         <div className="flex gap-4">
@@ -1051,7 +1051,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">ASK THE MENTOR</h4>
                       <div className="space-y-6">
                         {chatHistory.map((m, i) => (
-                          <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
+                          <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-700 dark:text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
                             <span className="block text-[9px] font-black uppercase tracking-widest mb-3 opacity-40">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
                             <span dangerouslySetInnerHTML={{ __html: m.content }} />
                           </div>
@@ -1071,12 +1071,12 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 ) : (
                   <div className="space-y-12">
                     {selectedLens.quiz.map((q: any, i: number) => (
-                      <div key={i} className="bg-black/5 p-10 rounded-[3rem] border border-[var(--border)] space-y-6 shadow-md">
+                      <div key={i} className="bg-black/[0.03] dark:bg-white/[0.01] p-10 rounded-[3rem] border border-[var(--border)] space-y-6 shadow-md">
                         <p className="text-[var(--foreground)] text-xl font-bold">{i + 1}. {q.question}</p>
                         <div className="grid gap-3">
                           {q.options.map((opt: string) => (
                             <button key={opt} onClick={() => setQuizAnswers({ ...quizAnswers, [i]: opt })}
-                              className={`p-5 rounded-2xl text-left transition-all border ${quizAnswers[i] === opt ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl' : 'bg-black/5 dark:bg-black/40 border-[var(--border)] opacity-60'}`}>
+                              className={`p-5 rounded-2xl text-left transition-all border ${quizAnswers[i] === opt ? 'bg-indigo-600 border-indigo-400 text-white shadow-xl' : 'bg-black/5 dark:bg-black/40 border-[var(--border)] opacity-70 hover:opacity-100'}`}>
                               {opt}
                             </button>
                           ))}
@@ -1109,7 +1109,7 @@ function MenuTile({ label, value, options, onChange }: { label: string; value: s
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 flex flex-col items-center justify-center shadow-md transition-all hover:border-indigo-500/40 flex-1 min-w-[150px] text-center">
       <span className="text-[9px] font-black uppercase text-slate-400 mb-3 tracking-widest">{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)} className="bg-transparent text-[var(--foreground)] font-bold text-[11px] outline-none cursor-pointer appearance-none border-none p-0 text-center w-full focus:ring-0 uppercase">
-        {options.map(opt => <option key={opt} value={opt} className="bg-[#0a0a0c]">{opt}</option>)}
+        {options.map(opt => <option key={opt} value={opt} className="bg-[var(--card)] text-[var(--foreground)]">{opt}</option>)}
       </select>
     </div>
   );
@@ -1117,7 +1117,7 @@ function MenuTile({ label, value, options, onChange }: { label: string; value: s
 
 function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button onClick={onClick} className={`flex items-center gap-3 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-black/5 text-slate-500'}`}>
+    <button onClick={onClick} className={`flex items-center gap-3 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-indigo-600 text-white shadow-2xl scale-105' : 'bg-black/5 dark:bg-white/5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
       {icon} {label}
     </button>
   );
@@ -1135,7 +1135,7 @@ function VividLensTile({ cat }: { cat: any }) {
 
 function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; title: string; desc: string; glow: 'turquoise' | 'yellow' | 'emerald' }) {
   const glows: Record<string, string> = { turquoise: 'shadow-[0_0_60px_rgba(0,242,255,0.3)] border-[#00f2ff]/40', yellow: 'shadow-[0_0_60px_rgba(255,255,0,0.4)] border-[#ffff00]/50', emerald: 'shadow-[0_0_60px_rgba(0,255,136,0.3)] border-[#00ff88]/40' };
-  const colors: Record<string, string> = { turquoise: 'text-[#00f2ff]', yellow: 'text-[#d9d900] dark:text-[#ffff00]', emerald: 'text-[#00cc6a] dark:text-[#00ff88]' };
+  const colors: Record<string, string> = { turquoise: 'text-[#0099bb] dark:text-[#00f2ff]', yellow: 'text-[#a89200] dark:text-[#ffff00]', emerald: 'text-[#00884a] dark:text-[#00ff88]' };
   return (
     <div className="perspective-1000 h-64 w-full cursor-pointer group">
       <motion.div whileHover={{ rotateY: 180 }} transition={{ duration: 0.6 }} className="relative w-full h-full preserve-3d">
@@ -1153,9 +1153,9 @@ function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; t
 
 function DashboardCard({ lens, onClick }: { lens: any; onClick: () => void }) {
   return (
-    <div className="p-10 rounded-[4rem] border border-[var(--border)] transition-all cursor-pointer h-[380px] flex flex-col items-center justify-between shadow-2xl bg-[var(--card)] hover:border-indigo-50/10 dark:hover:border-indigo-500/30" onClick={onClick}>
+    <div className="p-10 rounded-[4rem] border border-[var(--border)] transition-all cursor-pointer h-[380px] flex flex-col items-center justify-between shadow-2xl bg-[var(--card)] hover:border-indigo-300/60 dark:hover:border-indigo-500/30" onClick={onClick}>
       <div className="flex flex-col items-center gap-6 w-full text-center">
-        <div className={`w-6 h-6 rounded-full ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-800'}`} />
+        <div className={`w-6 h-6 rounded-full ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-700'}`} />
         <div className="w-16 h-16 rounded-2xl bg-black/5 flex items-center justify-center text-indigo-500 shadow-inner"><BookOpen size={28} /></div>
       </div>
       <div className="text-center">
