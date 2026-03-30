@@ -6,7 +6,14 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import mammoth from 'mammoth';
-import DOMPurify from 'isomorphic-dompurify';
+
+// Simple safe HTML sanitizer — strips all tags except the short allow-list
+const sanitizeHtml = (html: string): string => {
+  const allowed = ['b','i','em','strong','span','br','p'];
+  return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (match, tag) =>
+    allowed.includes(tag.toLowerCase()) ? match : ''
+  );
+};
 import {
   Sparkles, Clock, CheckCircle2, X, Target, Send, RefreshCcw,
   BookOpen, Brain, Users, MessageSquare, ShieldCheck, ArrowRight,
@@ -593,7 +600,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       // Sanitize HTML from chat reply before rendering
-      const sanitized = DOMPurify.sanitize(data.reply || '', { ALLOWED_TAGS: ['b','i','em','strong','span','br','p'], ALLOWED_ATTR: ['style'] });
+      const sanitized = sanitizeHtml(data.reply || '');
       setChatHistory(p => [...p, { role: 'assistant' as const, content: sanitized }]);
     } catch (e: any) { alert('Chat error: ' + (e.message || 'Please try again.')); }
     setChatLoading(false);
