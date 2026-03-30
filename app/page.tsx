@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import mammoth from 'mammoth';
+import DOMPurify from 'isomorphic-dompurify';
 import {
   Sparkles, Clock, CheckCircle2, X, Target, Send, RefreshCcw,
   BookOpen, Brain, Users, MessageSquare, ShieldCheck, ArrowRight,
@@ -27,6 +28,8 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
+
+const MAX_LESSON_LENGTH = 50000;
 
 const ALL_CATS = ['Clarity','Alignment','Inclusivity','Scaffolding','Differentiation','Objectives','Assessments','Engagement','Strategies','Materials','Collaboration','Closure'];
 const CAT_DATA = [
@@ -52,7 +55,6 @@ const EXCEED_COLORS: Record<string, string> = {
   'Objectives': '#0077ff',
 };
 
-// Display part types for inline diff rendering
 type DisplayPart =
   | { type: 'text'; content: string }
   | { type: 'diff'; original: string; replacement: string; isAddition?: boolean };
@@ -71,7 +73,6 @@ const fuzzyReplace = (text: string, quote: string, revision: string): string => 
   return text;
 };
 
-// Apply diff to display parts array
 const applyDiffToDisplayParts = (parts: DisplayPart[], quote: string, revision: string): DisplayPart[] => {
   if (!quote) return parts;
   const newParts: DisplayPart[] = [];
@@ -97,6 +98,184 @@ const applyDiffToDisplayParts = (parts: DisplayPart[], quote: string, revision: 
   return newParts;
 };
 
+// Safe download helper — always revokes blob URL after click to prevent memory leak
+const triggerDownload = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke after a short delay to ensure the download has started
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// ===================== ITERATIVE CARD — defined OUTSIDE component to prevent remounting =====================
+interface IterativeCardProps {
+  item: any;
+  sectionType: 'activity' | 'exceed';
+  color: string;
+  flashingId: string | null;
+  expandedRespond: string | null;
+  respondInputs: Record<string, string>;
+  reanalyzeLoading: Record<string, boolean>;
+  respondLoading: Record<string, boolean>;
+  theme: string;
+  onAgree: (item: any, sectionType: 'activity' | 'exceed') => void;
+  onDismiss: (item: any, sectionType: 'activity' | 'exceed') => void;
+  onReanalyze: (item: any, sectionType: 'activity' | 'exceed') => void;
+  onRespond: (item: any, sectionType: 'activity' | 'exceed') => void;
+  onRespondInputChange: (key: string, value: string) => void;
+  onRespondInputKeyDown: (e: React.KeyboardEvent, item: any, sectionType: 'activity' | 'exceed') => void;
+  onToggleRespond: (key: string) => void;
+}
+
+const IterativeCard = React.memo(({
+  item, sectionType, color, flashingId, expandedRespond,
+  respondInputs, reanalyzeLoading, respondLoading, theme,
+  onAgree, onDismiss, onReanalyze, onRespond,
+  onRespondInputChange, onRespondInputKeyDown, onToggleRespond,
+}: IterativeCardProps) => {
+  const key = item.id || item.category;
+  const isFlashing = flashingId === key;
+  const isExpanded = expandedRespond === key;
+  const isReanalyzing = reanalyzeLoading[key];
+  const isResponding = respondLoading[key];
+  const isAddition = sectionType === 'exceed' && !item.hasSection;
+
+  // Theme-aware diff colors
+  const diffStrikeColor = theme === 'dark' ? '#f87171' : '#dc2626';
+  const diffAddColor = theme === 'dark' ? '#34d399' : '#059669';
+  const diffBg = theme === 'dark' ? 'rgba(16,185,129,0.06)' : 'rgba(5,150,105,0.06)';
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: isFlashing ? 0.4 : 1, y: 0, scale: isFlashing ? 0.97 : 1 }}
+      exit={{ opacity: 0, x: 40, transition: { duration: 0.3 } }}
+      className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] overflow-hidden shadow-xl relative"
+      style={{ borderColor: isFlashing ? '#10b981' : 'var(--border)', transition: 'all 0.4s ease' }}
+    >
+      <div className="absolute top-0 left-0 w-1 h-full rounded-l-[2rem]" style={{ backgroundColor: color }} />
+      <div className="p-7 pl-9 space-y-4">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color }}>
+                {sectionType === 'activity' ? item.sectionName : item.category}
+              </span>
+              {sectionType === 'activity' && (
+                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${item.priority === 'HIGH' ? 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30'}`}>
+                  {item.priority || 'MEDIUM'}
+                </span>
+              )}
+              {isAddition && (
+                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 flex items-center gap-1">
+                  <PlusCircle size={8} /> No Section Found — Add
+                </span>
+              )}
+              {sectionType === 'exceed' && item.hasSection && (
+                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/30">
+                  Exists — Improve
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{item.pioneer || ''}</p>
+          </div>
+          <button onClick={() => onDismiss(item, sectionType)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex-shrink-0">
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Quote or not-found block */}
+        {item.notFound ? (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
+            <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">No specific section found in your lesson addressing {item.sectionName}.</p>
+          </div>
+        ) : isAddition ? (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
+            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1">Where to add</p>
+            <p className="text-sm text-[var(--foreground)] opacity-80">{item.addWhere || 'Add to your lesson plan'}</p>
+          </div>
+        ) : item.quote ? (
+          <div className="rounded-2xl p-4 border italic text-sm font-light text-[var(--foreground)]"
+            style={{ backgroundColor: `${color}0D`, borderColor: `${color}30` }}>
+            "{item.quote}"
+          </div>
+        ) : null}
+
+        {/* Feedback / currentLevel */}
+        {sectionType === 'activity' && item.feedback && (
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Feedback</p>
+            <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.feedback}</p>
+          </div>
+        )}
+        {sectionType === 'exceed' && item.hasSection && item.currentLevel && (
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Current Level</p>
+            <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.currentLevel}</p>
+          </div>
+        )}
+
+        {/* Revision */}
+        <div className="rounded-2xl p-4 border" style={{ backgroundColor: `${color}0D`, borderColor: `${color}30` }}>
+          <p className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color }}>
+            {isAddition ? '✦ Ready to Add' : '✦ Suggested Revision'}
+          </p>
+          <p className="text-sm text-[var(--foreground)] leading-relaxed font-medium">{item.revision}</p>
+        </div>
+
+        {/* Collapsible respond */}
+        <div>
+          <button onClick={() => onToggleRespond(key)}
+            className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:opacity-80 transition-all flex items-center gap-1">
+            <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+            Respond to this feedback
+          </button>
+          {isExpanded && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 flex gap-2">
+              <input
+                value={respondInputs[key] || ''}
+                onChange={e => onRespondInputChange(key, e.target.value)}
+                onKeyDown={e => onRespondInputKeyDown(e, item, sectionType)}
+                disabled={isResponding}
+                className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] focus:border-indigo-500/50 rounded-2xl px-4 py-2.5 text-sm outline-none transition-all disabled:opacity-50"
+                placeholder="e.g. 'Yes, but adjust for ELL...'" />
+              <button
+                onClick={() => onRespond(item, sectionType)}
+                disabled={isResponding}
+                className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all disabled:opacity-50 flex items-center justify-center">
+                {isResponding ? <RefreshCcw size={12} className="animate-spin" /> : <Send size={13} />}
+              </button>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
+          <button onClick={() => onAgree(item, sectionType)}
+            className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.25)]">
+            <CheckCircle2 size={14} /> {isAddition ? 'Add to Lesson' : 'I Agree'}
+          </button>
+          <button onClick={() => onReanalyze(item, sectionType)} disabled={isReanalyzing}
+            className="flex-1 py-3 bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-50 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5">
+            {isReanalyzing ? <RefreshCcw size={13} className="animate-spin" /> : <Zap size={13} />}
+            {isReanalyzing ? 'Analyzing...' : 'Re-analyze'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+IterativeCard.displayName = 'IterativeCard';
+
+// ===================== MAIN COMPONENT =====================
 export default function PedagogicalLabSaaS() {
   const [user, setUser] = useState<User | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -105,6 +284,7 @@ export default function PedagogicalLabSaaS() {
   const [step, setStep] = useState<'input' | 'dashboard' | 'iterative'>('input');
   const [loading, setLoading] = useState(false);
   const [lessonText, setLessonText] = useState('');
+  const [lessonError, setLessonError] = useState('');
   const [selectedLens, setSelectedLens] = useState<any | null>(null);
   const [drawerTab, setDrawerTab] = useState<'mentoring' | 'quiz'>('mentoring');
   const [config, setConfig] = useState({ tone: 'Coaching-style', grade: '6–8', subject: 'ELA', profile: 'General', mode: 'Full report', minutes: 45 });
@@ -127,6 +307,7 @@ export default function PedagogicalLabSaaS() {
   const [section2, setSection2] = useState<any[]>([]);
   const [s1Loading, setS1Loading] = useState(false);
   const [s2Loading, setS2Loading] = useState(false);
+  const [iterativeStarted, setIterativeStarted] = useState(false); // prevents allDone flash
   const [s1InitCount, setS1InitCount] = useState(0);
   const [s2InitCount, setS2InitCount] = useState(0);
   const [displayParts, setDisplayParts] = useState<DisplayPart[]>([]);
@@ -136,20 +317,30 @@ export default function PedagogicalLabSaaS() {
   const [respondInputs, setRespondInputs] = useState<Record<string, string>>({});
   const [expandedRespond, setExpandedRespond] = useState<string | null>(null);
   const [reanalyzeLoading, setReanalyzeLoading] = useState<Record<string, boolean>>({});
+  const [respondLoading, setRespondLoading] = useState<Record<string, boolean>>({});
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryText, setSummaryText] = useState('');
   const [gapLoading, setGapLoading] = useState(false);
   const [gapResults, setGapResults] = useState<any[]>([]);
+  const [iterativeError, setIterativeError] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const chatLoadingRef = useRef(false);
   const chatHistoryRef = useRef<typeof chatHistory>([]);
 
   useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
+
+  // Fix: auth listener cleanup + correct dependency (only theme change triggers re-attribute, auth only runs once)
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    onAuthStateChanged(auth, (u) => { if (u) { setUser(u); loadHistory(u.uid); } else setUser(null); });
   }, [theme]);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) { setUser(u); loadHistory(u.uid); }
+      else setUser(null);
+    });
+    return () => unsub(); // cleanup on unmount
+  }, []); // empty deps — auth listener registered once only
 
   const loadHistory = async (uid: string) => {
     const q = query(collection(db, 'users', uid, 'reports'), orderBy('timestamp', 'desc'));
@@ -175,17 +366,14 @@ export default function PedagogicalLabSaaS() {
     setLenses(processed); setStep('dashboard'); loadHistory(cu.uid);
   };
 
-  // --- ITERATIVE AGREE ---
+  // --- ITERATIVE HANDLERS ---
   const handleAgree = (item: any, sectionType: 'activity' | 'exceed') => {
     const itemKey = item.id || item.category;
     setUndoStack(prev => [...prev.slice(-4), { lessonText, displayParts }]);
     setFlashingId(itemKey);
-
     setTimeout(() => {
       if (sectionType === 'exceed' && !item.hasSection) {
-        // Append to lesson (new addition)
-        const addition = '\n\n' + item.revision;
-        setLessonText(prev => prev + addition);
+        setLessonText(prev => prev + '\n\n' + item.revision);
         setDisplayParts(prev => [...prev, { type: 'diff', original: '', replacement: item.revision, isAddition: true }]);
       } else {
         setDisplayParts(prev => applyDiffToDisplayParts(prev, item.quote, item.revision));
@@ -212,20 +400,25 @@ export default function PedagogicalLabSaaS() {
     setChangelog(c => c.slice(0, -1));
   };
 
+  // handleRespond now has its own loading state per card to prevent duplicate submissions
   const handleRespond = async (item: any, sectionType: 'activity' | 'exceed') => {
     const key = item.id || item.category;
     const val = respondInputs[key];
     if (!val?.trim()) return;
+    if (respondLoading[key]) return; // prevent duplicate submissions
+    setRespondLoading(prev => ({ ...prev, [key]: true }));
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-respond', lessonText, item, sectionType, userMessage: val, config }) });
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
       if (data.feedback) {
         if (sectionType === 'activity') setSection1(prev => prev.map(f => (f.id || f.sectionName) === (item.id || item.sectionName) ? { ...data.feedback } : f));
         else setSection2(prev => prev.map(g => g.category === item.category ? { ...data.feedback } : g));
         setRespondInputs(prev => ({ ...prev, [key]: '' }));
         setExpandedRespond(null);
       }
-    } catch { alert('Error updating feedback'); }
+    } catch (e: any) { alert('Error updating feedback: ' + (e.message || 'Please try again.')); }
+    setRespondLoading(prev => ({ ...prev, [key]: false }));
   };
 
   const handleReanalyze = async (item: any, sectionType: 'activity' | 'exceed') => {
@@ -234,11 +427,12 @@ export default function PedagogicalLabSaaS() {
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-reanalyze', lessonText, sectionType, sectionName: item.sectionName, category: item.category, config }) });
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
       if (data.feedback) {
         if (sectionType === 'activity') setSection1(prev => prev.map(f => (f.id || f.sectionName) === (item.id || item.sectionName) ? { ...data.feedback, id: item.id } : f));
         else setSection2(prev => prev.map(g => g.category === item.category ? { ...data.feedback } : g));
       }
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); alert('Re-analyze failed. Please try again.'); }
     setReanalyzeLoading(prev => ({ ...prev, [key]: false }));
   };
 
@@ -270,38 +464,36 @@ export default function PedagogicalLabSaaS() {
     const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Revised Lesson Plan</title></head><body style="font-family:Arial;padding:40px;">
 <h1 style="color:#4f46e5;font-size:24pt;margin-bottom:8px;">Revised Lesson Plan</h1>
 <p style="color:#6b7280;font-size:10pt;margin-bottom:24px;">Grade: ${config.grade} &nbsp;|&nbsp; Subject: ${config.subject} &nbsp;|&nbsp; Profile: ${config.profile} &nbsp;|&nbsp; Duration: ${config.minutes} minutes</p>
-<table border="1" style="border-collapse:collapse;width:100%;">
-<tr><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Section</th><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Content</th></tr>
-${rows}
-</table>
+<table border="1" style="border-collapse:collapse;width:100%;"><tr><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Section</th><th style="padding:12px 16px;background:#4f46e5;color:white;font-family:Arial;font-size:11pt;text-align:left;border:1px solid #4f46e5;">Content</th></tr>${rows}</table>
 ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40px;">Changes Made During Review</h2><table border="1" style="border-collapse:collapse;width:100%;"><tr><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Section</th><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Original</th><th style="padding:10px;background:#f3f4f6;font-family:Arial;font-size:10pt;text-align:left;border:1px solid #e5e7eb;">Revised</th></tr>${changelog.map(c => `<tr><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;">${c.sectionName}</td><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;color:#ef4444;text-decoration:line-through;">${c.isAddition ? '(new addition)' : c.quote}</td><td style="padding:10px;border:1px solid #e5e7eb;font-family:Arial;font-size:10pt;color:#10b981;">${c.revision}</td></tr>`).join('')}</table>` : ''}
 </body></html>`;
-    const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'Revised_Lesson_Plan.doc';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    triggerDownload(new Blob([html], { type: 'application/msword' }), 'Revised_Lesson_Plan.doc');
   };
 
-  // Render document with inline diffs
+  // Render document with theme-aware diff colors
   const renderDocument = () => {
+    const strikeColor = theme === 'dark' ? '#f87171' : '#dc2626';
+    const addColor = theme === 'dark' ? '#34d399' : '#059669';
+    const addBg = theme === 'dark' ? 'rgba(16,185,129,0.06)' : 'rgba(5,150,105,0.06)';
+
     if (displayParts.length === 0) return <span style={{ whiteSpace: 'pre-wrap' }}>{lessonText}</span>;
     return (
       <>
         {displayParts.map((part, i) => {
           if (part.type === 'text') return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part.content}</span>;
           return (
-            <span key={i} style={{ display: 'inline-block', width: '100%', margin: '6px 0', padding: '6px 10px', borderLeft: '3px solid #10b981', background: 'rgba(16,185,129,0.05)', borderRadius: '4px' }}>
+            <span key={i} style={{ display: 'inline-block', width: '100%', margin: '6px 0', padding: '6px 10px', borderLeft: `3px solid ${addColor}`, background: addBg, borderRadius: '4px' }}>
               {!part.isAddition && part.original && (
-                <span style={{ display: 'block', textDecoration: 'line-through', color: '#ef4444', opacity: 0.75, whiteSpace: 'pre-wrap', fontSize: '0.95em' }}>
+                <span style={{ display: 'block', textDecoration: 'line-through', color: strikeColor, opacity: 0.8, whiteSpace: 'pre-wrap', fontSize: '0.95em' }}>
                   {part.original}
                 </span>
               )}
               {part.isAddition && (
-                <span style={{ display: 'block', fontSize: '0.7em', fontWeight: 900, letterSpacing: '0.1em', color: '#10b981', textTransform: 'uppercase', marginBottom: '4px' }}>
+                <span style={{ display: 'block', fontSize: '0.7em', fontWeight: 900, letterSpacing: '0.1em', color: addColor, textTransform: 'uppercase', marginBottom: '4px' }}>
                   + Added
                 </span>
               )}
-              <span style={{ display: 'block', color: '#10b981', fontWeight: 600, whiteSpace: 'pre-wrap' }}>
+              <span style={{ display: 'block', color: addColor, fontWeight: 600, whiteSpace: 'pre-wrap' }}>
                 {part.replacement}
               </span>
             </span>
@@ -313,36 +505,47 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 
   // --- START ANALYSIS ---
   const startAnalysis = async () => {
+    if (!lessonText.trim()) { setLessonError('Please paste your lesson plan first.'); return; }
+    if (lessonText.length > MAX_LESSON_LENGTH) { setLessonError(`Lesson is too long. Please trim it under ${MAX_LESSON_LENGTH.toLocaleString()} characters.`); return; }
+    setLessonError('');
+
     let cu = user || (await login());
-    if (!cu || !lessonText) return;
-    if (config.mode === 'Custom selection' && customSelection.length === 0) return alert('Select categories.');
+    if (!cu) return;
+    if (config.mode === 'Custom selection' && customSelection.length === 0) return alert('Select at least one category.');
 
     if (config.mode === 'Iterative feedback') {
       setLoading(true);
       setSection1([]); setSection2([]);
       setS1Loading(true); setS2Loading(true);
+      setIterativeStarted(false); // reset before starting
       setDisplayParts([{ type: 'text', content: lessonText }]);
       setUndoStack([]); setFlashingId(null); setChangelog([]);
       setSummaryText(''); setGapResults([]); setReanalyzeLoading({});
-      setExpandedRespond(null); setRespondInputs({});
+      setRespondLoading({}); setExpandedRespond(null); setRespondInputs({});
+      setIterativeError('');
       setStep('iterative');
       setLoading(false);
 
-      // Fire both sections in parallel
       Promise.allSettled([
         fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-init-activities', lessonText, config }) }).then(r => r.json()),
         fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-init-exceed', lessonText, config }) }).then(r => r.json()),
       ]).then(([s1Res, s2Res]) => {
+        let anySuccess = false;
         if (s1Res.status === 'fulfilled' && s1Res.value?.feedbacks) {
           setSection1(s1Res.value.feedbacks);
           setS1InitCount(s1Res.value.feedbacks.length);
+          anySuccess = true;
         }
         setS1Loading(false);
         if (s2Res.status === 'fulfilled' && s2Res.value?.guide) {
           setSection2(s2Res.value.guide);
           setS2InitCount(s2Res.value.guide.length);
+          anySuccess = true;
         }
         setS2Loading(false);
+        // Mark as truly started — only now can allDone become true
+        setIterativeStarted(true);
+        if (!anySuccess) setIterativeError('Both sections failed to load. Please go back and try again.');
       });
       return;
     }
@@ -374,16 +577,18 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
   const handleFollowUp = async (autoText?: string) => {
     const text = typeof autoText === 'string' ? autoText : chatInput;
     if (!text?.trim()) return;
-    setChatLoading(true); chatLoadingRef.current = true;
+    setChatLoading(true);
     const msg = { role: 'user' as const, content: text };
     setChatHistory(p => [...p, msg]); setChatInput('');
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'chat', userMessage: msg.content, chatHistory: chatHistoryRef.current, config, lessonText, lensContext: selectedLens }) });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setChatHistory(p => [...p, { role: 'assistant' as const, content: data.reply }]);
-    } catch (e: any) { alert('Chat error: ' + e.message); }
-    chatLoadingRef.current = false; setChatLoading(false);
+      // Sanitize HTML from chat reply before rendering
+      const sanitized = DOMPurify.sanitize(data.reply || '', { ALLOWED_TAGS: ['b','i','em','strong','span','br','p'], ALLOWED_ATTR: ['style'] });
+      setChatHistory(p => [...p, { role: 'assistant' as const, content: sanitized }]);
+    } catch (e: any) { alert('Chat error: ' + (e.message || 'Please try again.')); }
+    setChatLoading(false);
   };
 
   const submitQuiz = () => {
@@ -399,10 +604,10 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'prize', lessonText, config }) });
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
       const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Elite Lesson Plan</title></head><body><h1>Elite Lesson Plan</h1><table border="1" style="border-collapse:collapse;width:100%;font-family:Arial;">${Object.entries(data).map(([k, v]) => `<tr><td style="padding:10px;font-weight:bold;background:#f3f4f6;width:25%;vertical-align:top;">${k}</td><td style="padding:10px;vertical-align:top;">${String(v).replace(/\n/g, '<br/>')}</td></tr>`).join('')}</table></body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'Elite_Lesson_Plan.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Prize generation failed'); }
+      triggerDownload(new Blob([html], { type: 'application/msword' }), 'Elite_Lesson_Plan.doc');
+    } catch (e: any) { alert('Prize generation failed: ' + (e.message || 'Please try again.')); }
     setPrizeLoading(false);
   };
 
@@ -411,10 +616,10 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'materializer', lessonText, config, userMessage: materializerInput }) });
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
       const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Student Handout</title></head><body style="font-family:Arial;padding:20px;">${data.html}</body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'Student_Handout.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Materializer failed'); }
+      triggerDownload(new Blob([html], { type: 'application/msword' }), 'Student_Handout.doc');
+    } catch (e: any) { alert('Materializer failed: ' + (e.message || 'Please try again.')); }
     setMaterialLoading(false);
   };
 
@@ -423,9 +628,9 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'gamifier', lessonText, config }) });
       const data = await res.json();
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([data.csv], { type: 'text/csv;charset=utf-8;' })), download: 'Kahoot_Ready_Quiz.csv' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('Gamifier failed'); }
+      if (data.error) throw new Error(data.error);
+      triggerDownload(new Blob([data.csv], { type: 'text/csv;charset=utf-8;' }), 'Kahoot_Ready_Quiz.csv');
+    } catch (e: any) { alert('Gamifier failed: ' + (e.message || 'Please try again.')); }
     setGameLoading(false);
   };
 
@@ -435,10 +640,10 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iep', lessonText, config, userMessage: iepInput }) });
       const data = await res.json();
+      if (data.error) throw new Error(data.error);
       const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>IEP Scaffold</title></head><body style="font-family:Arial;padding:20px;">${data.html}</body></html>`;
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([html], { type: 'application/msword' })), download: 'IEP_Accommodation.doc' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    } catch { alert('IEP generation failed'); }
+      triggerDownload(new Blob([html], { type: 'application/msword' }), 'IEP_Accommodation.doc');
+    } catch (e: any) { alert('IEP generation failed: ' + (e.message || 'Please try again.')); }
     setIepLoading(false);
   };
 
@@ -446,8 +651,15 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      try { const r = await mammoth.extractRawText({ arrayBuffer: ev.target?.result as ArrayBuffer }); setLessonText(r.value); }
-      catch { alert('Error reading .docx file'); }
+      try {
+        const r = await mammoth.extractRawText({ arrayBuffer: ev.target?.result as ArrayBuffer });
+        if (r.value.length > MAX_LESSON_LENGTH) {
+          setLessonError(`Document is too long. Please trim it under ${MAX_LESSON_LENGTH.toLocaleString()} characters.`);
+          return;
+        }
+        setLessonText(r.value);
+        setLessonError('');
+      } catch { alert('Error reading .docx file'); }
     };
     reader.readAsArrayBuffer(file); e.target.value = '';
   };
@@ -458,134 +670,15 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
   const totalResolved = s1Resolved + s2Resolved;
   const totalCards = s1InitCount + s2InitCount;
   const progressPct = totalCards > 0 ? (totalResolved / totalCards) * 100 : 0;
-  const allDone = !s1Loading && !s2Loading && section1.length === 0 && section2.length === 0;
+  // Fix: allDone only true after iterativeStarted is set, preventing flash on initial render
+  const allDone = iterativeStarted && !s1Loading && !s2Loading && section1.length === 0 && section2.length === 0;
 
-  // ===================== ITERATIVE CARD =====================
-  const IterativeCard = ({ item, sectionType, color }: { item: any; sectionType: 'activity' | 'exceed'; color: string }) => {
-    const key = item.id || item.category;
-    const isFlashing = flashingId === key;
-    const isExpanded = expandedRespond === key;
-    const isReanalyzing = reanalyzeLoading[key];
-    const isAddition = sectionType === 'exceed' && !item.hasSection;
-
-    return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: isFlashing ? 0.4 : 1, y: 0, scale: isFlashing ? 0.97 : 1 }}
-        exit={{ opacity: 0, x: 40, transition: { duration: 0.3 } }}
-        className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] overflow-hidden shadow-xl relative"
-        style={{ borderColor: isFlashing ? '#10b981' : 'var(--border)', transition: 'all 0.4s ease' }}
-      >
-        <div className="absolute top-0 left-0 w-1 h-full rounded-l-[2rem]" style={{ backgroundColor: color }} />
-        <div className="p-7 pl-9 space-y-4">
-
-          {/* Header */}
-          <div className="flex items-start justify-between gap-2">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-widest" style={{ color }}>
-                  {sectionType === 'activity' ? item.sectionName : item.category}
-                </span>
-                {sectionType === 'activity' && (
-                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${item.priority === 'HIGH' ? 'bg-red-500/20 text-red-600 dark:text-red-400 border-red-500/30' : 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30'}`}>
-                    {item.priority || 'MEDIUM'}
-                  </span>
-                )}
-                {isAddition && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 flex items-center gap-1">
-                    <PlusCircle size={8} /> No Section Found — Add
-                  </span>
-                )}
-                {sectionType === 'exceed' && item.hasSection && (
-                  <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full border bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/30">
-                    Exists — Improve
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{item.pioneer || ''}</p>
-            </div>
-            <button onClick={() => handleDismiss(item, sectionType)} className="p-2 hover:bg-black/10 dark:hover:bg-white/10 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex-shrink-0">
-              <X size={15} />
-            </button>
-          </div>
-
-          {/* Quote or not-found block */}
-          {item.notFound ? (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">No specific section found in your lesson addressing {item.sectionName}.</p>
-            </div>
-          ) : isAddition ? (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1">Where to add</p>
-              <p className="text-sm opacity-75">{item.addWhere || 'Add to your lesson plan'}</p>
-            </div>
-          ) : item.quote ? (
-            <div className="rounded-2xl p-4 border italic text-sm font-light opacity-90"
-              style={{ backgroundColor: `${color}10`, borderColor: `${color}25` }}>
-              "{item.quote}"
-            </div>
-          ) : null}
-
-          {/* Feedback / currentLevel */}
-          {sectionType === 'activity' && item.feedback && (
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Feedback</p>
-              <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.feedback}</p>
-            </div>
-          )}
-          {sectionType === 'exceed' && item.hasSection && item.currentLevel && (
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">Current Level</p>
-              <p className="text-sm text-[var(--foreground)] opacity-80 leading-relaxed">{item.currentLevel}</p>
-            </div>
-          )}
-
-          {/* Revision */}
-          <div className="rounded-2xl p-4 border" style={{ backgroundColor: `${color}10`, borderColor: `${color}25` }}>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color }}>
-              {isAddition ? '✦ Ready to Add' : '✦ Suggested Revision'}
-            </p>
-            <p className="text-sm text-[var(--foreground)] leading-relaxed font-medium">{item.revision}</p>
-          </div>
-
-          {/* Collapsible respond */}
-          <div>
-            <button onClick={() => setExpandedRespond(isExpanded ? null : key)}
-              className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:opacity-80 transition-all flex items-center gap-1">
-              <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-              Respond to this feedback
-            </button>
-            {isExpanded && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 flex gap-2">
-                <input value={respondInputs[key] || ''} onChange={e => setRespondInputs(p => ({ ...p, [key]: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && handleRespond(item, sectionType)}
-                  className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] focus:border-indigo-500/50 rounded-2xl px-4 py-2.5 text-sm outline-none transition-all"
-                  placeholder="e.g. 'Yes, but adjust for ELL...'" />
-                <button onClick={() => handleRespond(item, sectionType)} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all">
-                  <Send size={13} />
-                </button>
-              </motion.div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
-            <button onClick={() => handleAgree(item, sectionType)}
-              className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.25)]">
-              <CheckCircle2 size={14} /> {isAddition ? 'Add to Lesson' : 'I Agree'}
-            </button>
-            <button onClick={() => handleReanalyze(item, sectionType)} disabled={isReanalyzing}
-              className="flex-1 py-3 bg-indigo-600/80 hover:bg-indigo-600 disabled:opacity-50 transition-colors text-white rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-1.5">
-              {isReanalyzing ? <RefreshCcw size={13} className="animate-spin" /> : <Zap size={13} />}
-              {isReanalyzing ? 'Analyzing...' : 'Re-analyze'}
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    );
+  // Stable callbacks passed to IterativeCard to avoid unnecessary re-renders
+  const handleRespondInputChange = (key: string, value: string) => setRespondInputs(p => ({ ...p, [key]: value }));
+  const handleRespondInputKeyDown = (e: React.KeyboardEvent, item: any, sectionType: 'activity' | 'exceed') => {
+    if (e.key === 'Enter') handleRespond(item, sectionType);
   };
+  const handleToggleRespond = (key: string) => setExpandedRespond(prev => prev === key ? null : key);
 
   return (
     <div className="flex h-screen bg-[var(--background)] text-[var(--foreground)] transition-all duration-300">
@@ -607,7 +700,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="w-full flex items-center gap-3 p-3 text-xs font-bold hover:bg-white/5 rounded-lg text-white">Theme Toggle</button>
             {user && (
               <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                <img src={user.photoURL ?? ''} className="w-8 h-8 rounded-full" />
+                <img src={user.photoURL ?? ''} className="w-8 h-8 rounded-full" alt="avatar" />
                 <span className="text-xs font-bold truncate max-w-[120px]">{user.displayName}</span>
                 <button onClick={() => signOut(auth).then(() => setStep('input'))}><LogOut size={16} /></button>
               </div>
@@ -644,50 +737,29 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                 </div>
 
                 {/* WHY THIS EXISTS */}
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="w-full max-w-5xl mx-auto"
-                >
+                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="w-full max-w-5xl mx-auto">
                   <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2.5rem] p-10 md:p-14 space-y-10">
-
-                    {/* Label + intro */}
                     <div className="text-center space-y-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-600/70 dark:text-indigo-400/70">Why this exists</p>
-                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic leading-relaxed max-w-xl mx-auto">
-                        Before you paste your lesson, we want you to know one thing:
-                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 font-light italic leading-relaxed max-w-xl mx-auto">Before you paste your lesson, we want you to know one thing:</p>
                     </div>
-
-                    {/* Two statements side by side */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
-                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
+                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/[0.03] dark:bg-white/[0.02] border border-[var(--border)]">
                         <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
                           The best lesson plan in the world means nothing if you're too burned out to deliver it.{' '}
-                          <span className="font-semibold text-[var(--foreground)]">
-                            Every hour saved on planning is an hour you show up more present, more energized, more <em>you</em> — and your students feel that.
-                          </span>
+                          <span className="font-semibold">Every hour saved on planning is an hour you show up more present, more energized, more <em>you</em> — and your students feel that.</span>
                         </p>
                       </div>
-
-                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/5 dark:bg-white/[0.02] border border-[var(--border)]">
+                      <div className="space-y-3 text-left p-6 rounded-2xl bg-black/[0.03] dark:bg-white/[0.02] border border-[var(--border)]">
                         <p className="text-[var(--foreground)] text-base md:text-lg font-light leading-relaxed">
                           Every minute you spend on planning is a minute not spent on your students.{' '}
-                          <span className="font-semibold text-[var(--foreground)]">
-                            This tool gives those minutes back — so when you walk into that classroom, you're fully there.
-                          </span>
+                          <span className="font-semibold">This tool gives those minutes back — so when you walk into that classroom, you're fully there.</span>
                         </p>
                       </div>
                     </div>
-
-                    {/* Closing anchor */}
                     <div className="text-center pt-4 border-t border-[var(--border)]">
-                      <p className="text-sm text-slate-400 dark:text-slate-500 font-light italic">
-                        That's what this tool is for. Not to replace you — to make sure your students always get the best of you.
-                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 font-light italic">That's what this tool is for. Not to replace you — to make sure your students always get the best of you.</p>
                     </div>
-
                   </div>
                 </motion.div>
 
@@ -706,14 +778,17 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     </div>
                   </div>
                 </div>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 w-full max-w-5xl mx-auto pt-8">
                   {CAT_DATA.map(cat => <VividLensTile key={cat.id} cat={cat} theme={theme} />)}
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
                   <FeatureFlipCard icon={<Brain size={24} />} title="Theory Aware" desc="Deep Pedagogy: Every insight is hard-wired into proven research." glow="turquoise" />
                   <FeatureFlipCard icon={<Clock size={24} />} title="Time Budgeted" desc="Clock-Sync: Routines engineered to fit your exact minutes." glow="yellow" />
                   <FeatureFlipCard icon={<ShieldCheck size={24} />} title="Mastery Certified" desc="Evidence-Based: Verify growth through mastery check-ins." glow="emerald" />
                 </div>
+
                 <div className="w-full max-w-[1400px] px-4">
                   <div className="flex flex-row gap-2 justify-center items-stretch w-full">
                     <MenuTile label="Tone" value={config.tone} options={['Coaching-style','Supportive','Warm','Direct']} onChange={v => setConfig({ ...config, tone: v })} />
@@ -731,6 +806,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     </div>
                   </div>
                 </div>
+
                 {config.mode === 'Custom selection' && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="w-full max-w-6xl pb-8">
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -743,6 +819,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     </div>
                   </motion.div>
                 )}
+
                 <div className={`bg-[var(--card)] border rounded-[3rem] p-3 shadow-3xl relative overflow-hidden group transition-all duration-1000 w-full max-w-6xl mx-auto ${lessonText ? 'animate-liquid-border' : 'border-[var(--border)]'}`}>
                   <div className="absolute top-6 right-8 z-10 flex gap-4">
                     <input type="file" accept=".docx" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
@@ -750,9 +827,15 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       <FileUp size={14} /> Upload .docx
                     </button>
                   </div>
-                  <textarea value={lessonText} onChange={e => setLessonText(e.target.value)}
+                  <textarea value={lessonText} onChange={e => { setLessonText(e.target.value); if (e.target.value.length <= MAX_LESSON_LENGTH) setLessonError(''); }}
                     className="w-full h-[400px] bg-transparent border-none p-12 text-2xl text-[var(--foreground)] resize-none outline-none font-light leading-relaxed text-center placeholder:text-slate-400 dark:placeholder:text-slate-600"
                     placeholder="Paste your lesson plan here or upload a .docx..." />
+                  {lessonError && <p className="text-center text-sm text-red-500 font-bold pb-2">{lessonError}</p>}
+                  {lessonText.length > 0 && (
+                    <p className={`text-center text-xs pb-2 ${lessonText.length > MAX_LESSON_LENGTH ? 'text-red-500' : 'text-slate-400'}`}>
+                      {lessonText.length.toLocaleString()} / {MAX_LESSON_LENGTH.toLocaleString()} characters
+                    </p>
+                  )}
                   <div className="p-4 pt-0 flex justify-center">
                     <motion.button onClick={startAnalysis} disabled={loading} whileHover={{ scale: 1.005 }}
                       className="relative w-full h-28 bg-[#050508] border border-black/10 dark:border-white/10 text-white rounded-2xl font-black text-2xl uppercase tracking-[0.3em] overflow-hidden shadow-2xl flex items-center justify-center group">
@@ -805,11 +888,19 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   <motion.div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.5 }} />
                 </div>
 
+                {/* Error state */}
+                {iterativeError && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5 flex items-center gap-3">
+                    <AlertTriangle size={18} className="text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-600 dark:text-red-400 font-medium">{iterativeError}</p>
+                  </div>
+                )}
+
                 {/* Split pane */}
                 {!allDone && (
                   <div className="flex flex-col lg:flex-row gap-6" style={{ minHeight: '70vh' }}>
 
-                    {/* LEFT: Document with inline diffs */}
+                    {/* LEFT: Document */}
                     <div className="w-full lg:w-[45%] flex flex-col gap-3 flex-shrink-0">
                       <h4 className="text-2xl font-serif italic tracking-tighter text-indigo-600 dark:text-indigo-400">Lesson Document</h4>
                       <div className="flex-1 bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 overflow-y-auto text-[var(--foreground)] text-base leading-8 font-light shadow-xl" style={{ minHeight: '60vh' }}>
@@ -817,7 +908,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       </div>
                     </div>
 
-                    {/* RIGHT: Both sections stacked */}
+                    {/* RIGHT: Both sections */}
                     <div className="w-full lg:flex-1 flex flex-col gap-5 overflow-y-auto scrollbar-hide" style={{ maxHeight: '82vh' }}>
 
                       {/* SECTION 1 */}
@@ -834,7 +925,18 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         ) : (
                           <AnimatePresence>
                             {section1.map(item => (
-                              <IterativeCard key={item.id || item.sectionName} item={item} sectionType="activity" color="#6366f1" />
+                              <IterativeCard
+                                key={item.id || item.sectionName}
+                                item={item} sectionType="activity" color="#6366f1"
+                                flashingId={flashingId} expandedRespond={expandedRespond}
+                                respondInputs={respondInputs} reanalyzeLoading={reanalyzeLoading}
+                                respondLoading={respondLoading} theme={theme}
+                                onAgree={handleAgree} onDismiss={handleDismiss}
+                                onReanalyze={handleReanalyze} onRespond={handleRespond}
+                                onRespondInputChange={handleRespondInputChange}
+                                onRespondInputKeyDown={handleRespondInputKeyDown}
+                                onToggleRespond={handleToggleRespond}
+                              />
                             ))}
                           </AnimatePresence>
                         )}
@@ -846,7 +948,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         )}
                       </div>
 
-                      {/* DIVIDER */}
                       <div className="border-t-2 border-dashed border-[var(--border)] my-2" />
 
                       {/* SECTION 2 */}
@@ -855,7 +956,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           <h4 className="text-2xl font-serif italic tracking-tighter text-purple-700 dark:text-[#bc13fe]">Exceed Expectations Guide</h4>
                           {s2Loading && <RefreshCcw size={16} className="animate-spin text-purple-700 dark:text-[#bc13fe]" />}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 opacity-80 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
                         {s2Loading ? (
                           <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
                             <RefreshCcw size={24} className="animate-spin text-purple-700 dark:text-[#bc13fe] mx-auto mb-3" />
@@ -864,7 +965,18 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         ) : (
                           <AnimatePresence>
                             {section2.map(item => (
-                              <IterativeCard key={item.category} item={item} sectionType="exceed" color={EXCEED_COLORS[item.category] || '#6366f1'} />
+                              <IterativeCard
+                                key={item.category}
+                                item={item} sectionType="exceed" color={EXCEED_COLORS[item.category] || '#6366f1'}
+                                flashingId={flashingId} expandedRespond={expandedRespond}
+                                respondInputs={respondInputs} reanalyzeLoading={reanalyzeLoading}
+                                respondLoading={respondLoading} theme={theme}
+                                onAgree={handleAgree} onDismiss={handleDismiss}
+                                onReanalyze={handleReanalyze} onRespond={handleRespond}
+                                onRespondInputChange={handleRespondInputChange}
+                                onRespondInputKeyDown={handleRespondInputKeyDown}
+                                onToggleRespond={handleToggleRespond}
+                              />
                             ))}
                           </AnimatePresence>
                         )}
@@ -875,13 +987,12 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           </div>
                         )}
                       </div>
-
                     </div>
                   </div>
                 )}
 
                 {/* COMPLETION PANEL */}
-                {allDone && changelog.length >= 0 && (
+                {allDone && (
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                     <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-[3rem] p-10 text-center space-y-8">
                       <CheckCircle2 size={56} className="text-emerald-600 dark:text-emerald-500 mx-auto" />
@@ -892,25 +1003,23 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         <p className="text-sm text-slate-500 dark:text-slate-400">Your lesson has been iteratively improved</p>
                       </div>
 
-                      {/* Changelog */}
                       {changelog.length > 0 && (
                         <div className="text-left space-y-3 max-w-3xl mx-auto">
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-80 text-center">What Changed</p>
                           {changelog.map((c, i) => (
-                            <div key={i} className="flex gap-3 items-start p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5">
-                              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-emerald-500" />
+                            <div key={i} className="flex gap-3 items-start p-4 rounded-2xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/5">
+                              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-emerald-600 dark:bg-emerald-500" />
                               <div>
                                 <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-400 block mb-1">{c.sectionName}</span>
-                                {!c.isAddition && <p className="text-xs opacity-50 line-through mb-1">"{c.quote}"</p>}
-                                {c.isAddition && <p className="text-xs opacity-50 mb-1">(new addition)</p>}
-                                <p className="text-xs font-medium">"{c.revision}"</p>
+                                {!c.isAddition && <p className="text-xs text-slate-400 line-through mb-1">"{c.quote}"</p>}
+                                {c.isAddition && <p className="text-xs text-slate-400 mb-1">(new addition)</p>}
+                                <p className="text-xs font-medium text-[var(--foreground)]">"{c.revision}"</p>
                               </div>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {/* Gap Detector */}
                       {gapResults.length === 0 ? (
                         <button onClick={handleGapDetect} disabled={gapLoading}
                           className="px-8 py-4 bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 mx-auto transition-all">
@@ -921,11 +1030,11 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         <div className="text-left space-y-3 max-w-3xl mx-auto">
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-80 text-center">Lesson Gap Report</p>
                           {gapResults.map((g, i) => (
-                            <div key={i} className={`flex gap-3 items-start p-4 rounded-2xl border ${g.adequatelyAddressed ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
+                            <div key={i} className={`flex gap-3 items-start p-4 rounded-2xl border ${g.adequatelyAddressed ? 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/5' : 'border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5'}`}>
                               {g.adequatelyAddressed ? <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-500 flex-shrink-0 mt-0.5" /> : <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />}
                               <div>
                                 <span className={`text-[9px] font-black uppercase tracking-widest block mb-1 ${g.adequatelyAddressed ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>{g.category}</span>
-                                {!g.adequatelyAddressed && <p className="text-xs opacity-75">{g.note}</p>}
+                                {!g.adequatelyAddressed && <p className="text-xs text-[var(--foreground)] opacity-75">{g.note}</p>}
                                 {g.adequatelyAddressed && <p className="text-xs text-slate-500 dark:text-slate-400">Adequately addressed ✓</p>}
                               </div>
                             </div>
@@ -933,11 +1042,10 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         </div>
                       )}
 
-                      {/* Summary */}
                       {summaryText ? (
                         <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl p-6 text-left max-w-3xl mx-auto">
                           <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 mb-3">Mentor Summary</p>
-                          <p className="text-sm leading-relaxed opacity-80">{summaryText}</p>
+                          <p className="text-sm leading-relaxed text-[var(--foreground)] opacity-80">{summaryText}</p>
                         </div>
                       ) : changelog.length > 0 && (
                         <button onClick={handleGenerateSummary} disabled={summaryLoading}
@@ -947,7 +1055,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         </button>
                       )}
 
-                      {/* Next steps */}
                       <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
                         <button onClick={exportRevisedLesson}
                           className="px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
@@ -1048,11 +1155,12 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       </div>
                     )}
                     <div className="space-y-8 pt-12 border-t border-[var(--border)]">
-                      <h4 className="font-black uppercase text-[10px] tracking-widest text-slate-500 dark:text-slate-400 opacity-80">ASK THE MENTOR</h4>
+                      <h4 className="font-black uppercase text-[10px] tracking-widest text-slate-500 dark:text-slate-400">ASK THE MENTOR</h4>
                       <div className="space-y-6">
                         {chatHistory.map((m, i) => (
                           <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-700 dark:text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
                             <span className="block text-[9px] font-black uppercase tracking-widest mb-3 text-slate-500 dark:text-slate-400">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
+                            {/* Sanitized HTML — safe to render */}
                             <span dangerouslySetInnerHTML={{ __html: m.content }} />
                           </div>
                         ))}
@@ -1124,15 +1232,17 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 function VividLensTile({ cat, theme }: { cat: any; theme: string }) {
+  // Light mode uses a slightly muted version of the color, dark mode uses full neon
+  const iconColor = theme === 'dark' ? cat.color : cat.color + 'cc';
   return (
     <motion.div
       whileHover={{
         backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.05)',
-        borderColor: theme === 'dark' ? cat.color : `${cat.color}99`,
+        borderColor: theme === 'dark' ? cat.color : `${cat.color}88`,
         boxShadow: theme === 'dark' ? `0 0 50px ${cat.color}88` : `0 0 16px ${cat.color}33`,
       }}
       className="bg-black/5 dark:bg-white/[0.02] border border-[var(--border)] rounded-xl p-6 flex flex-col items-center justify-center gap-3 transition-all h-32 flex-shrink-0 text-center cursor-pointer">
-      <div style={{ color: theme === 'dark' ? cat.color : cat.color }} className="dark:drop-shadow-[0_0_10px_currentColor]">{cat.icon}</div>
+      <div style={{ color: iconColor }} className="dark:drop-shadow-[0_0_10px_currentColor]">{cat.icon}</div>
       <span className="text-[10px] font-black uppercase text-center text-slate-600 dark:text-slate-300">{cat.name}</span>
     </motion.div>
   );
@@ -1144,7 +1254,11 @@ function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; t
     yellow: 'dark:shadow-[0_0_60px_rgba(255,255,0,0.4)] shadow-[0_4px_20px_rgba(180,150,0,0.15)] border-[#a89000] dark:border-[#ffff00]/50',
     emerald: 'dark:shadow-[0_0_60px_rgba(0,255,136,0.3)] shadow-[0_4px_20px_rgba(0,160,85,0.15)] border-[#00a855] dark:border-[#00ff88]/40',
   };
-  const colors: Record<string, string> = { turquoise: 'text-[#0099bb] dark:text-[#00f2ff]', yellow: 'text-[#a89200] dark:text-[#ffff00]', emerald: 'text-[#00884a] dark:text-[#00ff88]' };
+  const colors: Record<string, string> = {
+    turquoise: 'text-[#0099bb] dark:text-[#00f2ff]',
+    yellow: 'text-[#a89200] dark:text-[#ffff00]',
+    emerald: 'text-[#00884a] dark:text-[#00ff88]',
+  };
   return (
     <div className="perspective-1000 h-64 w-full cursor-pointer group">
       <motion.div whileHover={{ rotateY: 180 }} transition={{ duration: 0.6 }} className="relative w-full h-full preserve-3d">
