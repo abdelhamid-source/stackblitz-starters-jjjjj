@@ -231,26 +231,34 @@ const IterativeCard = React.memo(({
           <p className="text-sm text-[var(--foreground)] leading-relaxed font-medium">{item.revision}</p>
         </div>
 
-        {/* Collapsible respond */}
-        <div>
-          <button onClick={() => onToggleRespond(key)}
-            className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:opacity-80 transition-all flex items-center gap-1">
-            <ChevronRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-            Respond to this feedback
+        {/* Respond to feedback — prominent teacher comment box */}
+        <div className="rounded-2xl border border-dashed transition-all" style={{ borderColor: `${color}50`, backgroundColor: `${color}07` }}>
+          <button
+            onClick={() => onToggleRespond(key)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left group"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">💬</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 group-hover:text-[var(--foreground)] transition-colors">
+                Disagree or want to add context?
+              </span>
+            </div>
+            <ChevronRight size={12} className={`text-slate-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
           </button>
           {isExpanded && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-2 flex gap-2">
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="px-4 pb-4 flex gap-2">
               <input
                 value={respondInputs[key] || ''}
                 onChange={e => onRespondInputChange(key, e.target.value)}
                 onKeyDown={e => onRespondInputKeyDown(e, item, sectionType)}
                 disabled={isResponding}
-                className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] focus:border-indigo-500/50 rounded-2xl px-4 py-2.5 text-sm outline-none transition-all disabled:opacity-50"
-                placeholder="e.g. 'Yes, but adjust for ELL...'" />
+                className="flex-1 bg-[var(--background)] border border-[var(--border)] focus:border-indigo-500/60 rounded-xl px-4 py-2.5 text-sm outline-none transition-all disabled:opacity-50"
+                placeholder="Tell the AI what to adjust — it will revise the feedback and suggestion for you..." />
               <button
                 onClick={() => onRespond(item, sectionType)}
                 disabled={isResponding}
-                className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black transition-all disabled:opacity-50 flex items-center justify-center">
+                className="px-4 py-2.5 text-white rounded-xl text-xs font-black transition-all disabled:opacity-50 flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: color }}>
                 {isResponding ? <RefreshCcw size={12} className="animate-spin" /> : <Send size={13} />}
               </button>
             </motion.div>
@@ -1101,9 +1109,12 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   </div>
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 pt-10 mx-auto w-full text-left">
-                  {lenses.map(lens => (
-                    <DashboardCard key={lens.id} lens={lens} onClick={() => { setSelectedLens(lens); setDrawerTab('mentoring'); setQuizResult(null); setQuizAnswers({}); setChatHistory([]); }} />
-                  ))}
+                  {lenses.map(lens => {
+                    const catEntry = CAT_DATA.find(c => c.name === lens.name) || null;
+                    return (
+                      <DashboardCard key={lens.id} lens={lens} catData={catEntry} onClick={() => { setSelectedLens(lens); setDrawerTab('mentoring'); setQuizResult(null); setQuizAnswers({}); setChatHistory([]); }} />
+                    );
+                  })}
                 </div>
               </motion.div>
             )}
@@ -1274,16 +1285,33 @@ function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; t
   );
 }
 
-function DashboardCard({ lens, onClick }: { lens: any; onClick: () => void }) {
+function DashboardCard({ lens, catData, onClick }: { lens: any; catData: any; onClick: () => void }) {
+  const color = catData?.color || '#6366f1';
+  const iconColor = lens.status === 'green' ? color : (typeof window !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? color + 'aa' : color);
   return (
-    <div className="p-10 rounded-[4rem] border border-[var(--border)] transition-all cursor-pointer h-[380px] flex flex-col items-center justify-between shadow-2xl bg-[var(--card)] hover:border-indigo-300/60 dark:hover:border-indigo-500/30" onClick={onClick}>
-      <div className="flex flex-col items-center gap-6 w-full text-center">
-        <div className={`w-6 h-6 rounded-full ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-700'}`} />
-        <div className="w-16 h-16 rounded-2xl bg-black/5 dark:bg-white/5 flex items-center justify-center text-indigo-600 dark:text-indigo-500 shadow-inner"><BookOpen size={28} /></div>
+    <div
+      className="rounded-[3rem] border border-[var(--border)] transition-all cursor-pointer flex flex-col items-center justify-between shadow-xl bg-[var(--card)] hover:scale-[1.02] overflow-hidden"
+      style={{ borderTop: `4px solid ${color}` }}
+      onClick={onClick}
+    >
+      {/* Top: icon + status */}
+      <div className="w-full flex flex-col items-center gap-4 pt-8 pb-4 px-6">
+        {/* Status dot */}
+        <div className={`w-2.5 h-2.5 rounded-full self-end ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
+        {/* Category icon */}
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner"
+          style={{ backgroundColor: `${color}15`, color }}
+        >
+          <div style={{ color }} className="dark:drop-shadow-[0_0_12px_currentColor]">
+            {catData?.icon ?? <span className="text-2xl font-black">{lens.name?.[0]}</span>}
+          </div>
+        </div>
       </div>
-      <div className="text-center">
-        <h4 className="text-3xl font-black mb-4 uppercase tracking-tighter">{lens.name}</h4>
-        <span className="text-[10px] text-indigo-600 dark:text-indigo-500 font-black uppercase italic block">{lens.pioneer}</span>
+      {/* Bottom: name + pioneer */}
+      <div className="w-full text-center px-6 pb-8 space-y-2">
+        <h4 className="text-2xl font-black uppercase tracking-tighter text-[var(--foreground)] leading-tight">{lens.name}</h4>
+        <span className="text-[10px] font-black uppercase italic block" style={{ color }}>{lens.pioneer}</span>
       </div>
     </div>
   );
