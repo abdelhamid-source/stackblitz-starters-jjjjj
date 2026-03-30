@@ -9,11 +9,16 @@ export async function POST(req: Request) {
     const { lessonText, config, selectedLenses, type, chatHistory, userMessage, lensContext } = body;
 
     // --- INPUT VALIDATION ---
-    if (!type) return NextResponse.json({ error: 'Missing request type.' }, { status: 400 });
+    // type is optional — missing type falls through to main analysis (full/focused/custom)
+    if (type && typeof type !== 'string') return NextResponse.json({ error: 'Invalid request type.' }, { status: 400 });
     if (!config) return NextResponse.json({ error: 'Missing config.' }, { status: 400 });
 
     const textRequiredTypes = ['prize','materializer','gamifier','iep','chat','iterative-init-activities','iterative-init-exceed','iterative-respond','iterative-reanalyze','iterative-summary','iterative-gap'];
-    if (textRequiredTypes.includes(type) && (!lessonText || typeof lessonText !== 'string' || lessonText.trim().length === 0)) {
+    if (type && textRequiredTypes.includes(type) && (!lessonText || typeof lessonText !== 'string' || lessonText.trim().length === 0)) {
+      return NextResponse.json({ error: 'Lesson text is required.' }, { status: 400 });
+    }
+    // Main analysis (no type) also requires lesson text
+    if (!type && (!lessonText || typeof lessonText !== 'string' || lessonText.trim().length === 0)) {
       return NextResponse.json({ error: 'Lesson text is required.' }, { status: 400 });
     }
     if (lessonText && lessonText.length > 50000) {
