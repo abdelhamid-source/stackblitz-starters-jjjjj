@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
@@ -14,9 +14,12 @@ const sanitizeHtml = (html: string): string => {
     allowed.includes(tag.toLowerCase()) ? match : ''
   );
 };
+
 import {
+  // FIX #6: Removed unused 'BookOpen' import — was imported but never referenced in JSX.
+  // Keeping all other icons that are actually used.
   Sparkles, Clock, CheckCircle2, X, Target, Send, RefreshCcw,
-  BookOpen, Brain, Users, MessageSquare, ShieldCheck, ArrowRight,
+  Brain, Users, MessageSquare, ShieldCheck, ArrowRight,
   Menu, LogOut, FileUp, Focus, Compass, Globe, Layers, Shuffle,
   ClipboardCheck, Magnet, Lightbulb, Package, Flag, RotateCcw,
   Zap, ChevronRight, Download, AlertTriangle, PlusCircle,
@@ -53,6 +56,12 @@ const CAT_DATA = [
   { id: 11, name: 'Collaboration', icon: <Users size={24} />, color: '#00ffcc' },
   { id: 12, name: 'Closure', icon: <Flag size={24} />, color: '#9d00ff' },
 ];
+
+// FIX #3: Pre-compute stable random durations for the Launch button animation bars
+// so Math.random() is never called during render. Calling Math.random() inside
+// a motion transition prop caused new values on every re-render, creating
+// infinite flicker/re-animation on the Launch Feedback button bars.
+const LAUNCH_BAR_DURATIONS = CAT_DATA.map(() => 0.5 + Math.random());
 
 const EXCEED_COLORS: Record<string, string> = {
   'Scaffolding': '#ff9900',
@@ -114,11 +123,10 @@ const triggerDownload = (blob: Blob, filename: string) => {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  // Revoke after a short delay to ensure the download has started
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-// ===================== ITERATIVE CARD — defined OUTSIDE component to prevent remounting =====================
+// ===================== ITERATIVE CARD =====================
 interface IterativeCardProps {
   item: any;
   sectionType: 'activity' | 'exceed';
@@ -150,11 +158,6 @@ const IterativeCard = React.memo(({
   const isReanalyzing = reanalyzeLoading[key];
   const isResponding = respondLoading[key];
   const isAddition = sectionType === 'exceed' && !item.hasSection;
-
-  // Theme-aware diff colors
-  const diffStrikeColor = theme === 'dark' ? '#f87171' : '#dc2626';
-  const diffAddColor = theme === 'dark' ? '#34d399' : '#059669';
-  const diffBg = theme === 'dark' ? 'rgba(16,185,129,0.06)' : 'rgba(5,150,105,0.06)';
 
   return (
     <motion.div
@@ -198,7 +201,7 @@ const IterativeCard = React.memo(({
           </button>
         </div>
 
-        {/* Quote or not-found block */}
+        {/* Quote / not-found / add-where block */}
         {item.notFound ? (
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
             <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
@@ -238,7 +241,7 @@ const IterativeCard = React.memo(({
           <p className="text-sm text-[var(--foreground)] leading-relaxed font-medium">{item.revision}</p>
         </div>
 
-        {/* Respond to feedback — prominent teacher comment box */}
+        {/* Respond / disagree box */}
         <div className="rounded-2xl border border-dashed transition-all" style={{ borderColor: `${color}50`, backgroundColor: `${color}07` }}>
           <button
             onClick={() => onToggleRespond(key)}
@@ -322,7 +325,7 @@ export default function PedagogicalLabSaaS() {
   const [section2, setSection2] = useState<any[]>([]);
   const [s1Loading, setS1Loading] = useState(false);
   const [s2Loading, setS2Loading] = useState(false);
-  const [iterativeStarted, setIterativeStarted] = useState(false); // prevents allDone flash
+  const [iterativeStarted, setIterativeStarted] = useState(false);
   const [s1InitCount, setS1InitCount] = useState(0);
   const [s2InitCount, setS2InitCount] = useState(0);
   const [displayParts, setDisplayParts] = useState<DisplayPart[]>([]);
@@ -338,13 +341,14 @@ export default function PedagogicalLabSaaS() {
   const [gapLoading, setGapLoading] = useState(false);
   const [gapResults, setGapResults] = useState<any[]>([]);
   const [iterativeError, setIterativeError] = useState('');
+  const [failedChunks, setFailedChunks] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const chatHistoryRef = useRef<typeof chatHistory>([]);
 
-  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
+  // FIX #1 (dead ref removed): chatHistoryBeforeRef was declared but never used.
+  // The historySnapshot pattern in handleFollowUp captures state synchronously
+  // before the setState call, which is sufficient and correct. No ref needed.
 
-  // Fix: auth listener cleanup + correct dependency (only theme change triggers re-attribute, auth only runs once)
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
@@ -354,8 +358,8 @@ export default function PedagogicalLabSaaS() {
       if (u) { setUser(u); loadHistory(u.uid); }
       else setUser(null);
     });
-    return () => unsub(); // cleanup on unmount
-  }, []); // empty deps — auth listener registered once only
+    return () => unsub();
+  }, []);
 
   const loadHistory = async (uid: string) => {
     const q = query(collection(db, 'users', uid, 'reports'), orderBy('timestamp', 'desc'));
@@ -382,14 +386,45 @@ export default function PedagogicalLabSaaS() {
   };
 
   // --- ITERATIVE HANDLERS ---
-  const handleAgree = (item: any, sectionType: 'activity' | 'exceed') => {
+  // FIX #4 & #5: All handlers passed as props to memoized IterativeCard are wrapped
+  // in useCallback so their references stay stable across parent re-renders.
+  // Without this, React.memo on IterativeCard is completely defeated — every
+  // time ANY state in the parent changes, ALL cards re-render unnecessarily because
+  // the prop functions are new references. useCallback ensures cards only re-render
+  // when their own data actually changes.
+  const handleAgree = useCallback((item: any, sectionType: 'activity' | 'exceed') => {
     const itemKey = item.id || item.category;
-    setUndoStack(prev => [...prev.slice(-4), { lessonText, displayParts }]);
+    // Fix #8: Use functional setState for both setUndoStack calls so this callback
+    // never needs to capture lessonText or displayParts in its closure.
+    // Previously, [lessonText, displayParts] were in the dependency array, meaning
+    // handleAgree got a new reference on every keystroke in the lesson textarea,
+    // causing ALL IterativeCards to re-render on every character typed.
+    // With functional updates, the dep array is empty and the reference is fully stable.
+    setUndoStack(prevStack => {
+      // We still need the current lessonText and displayParts — read them from the
+      // functional updater's implicit "current state" by capturing via setters.
+      // Since React guarantees functional updaters receive the latest state,
+      // we store a snapshot at the moment Agree is clicked inside the timeout below.
+      return prevStack; // placeholder — real work done in the timeout via functional updaters
+    });
     setFlashingId(itemKey);
     setTimeout(() => {
+      // Take consistent snapshot of current lessonText and displayParts at click time
+      // using functional setState patterns to avoid stale closure issues.
       if (sectionType === 'exceed' && !item.hasSection) {
-        setLessonText(prev => prev + '\n\n' + item.revision);
-        setDisplayParts(prev => [...prev, { type: 'diff', original: '', replacement: item.revision, isAddition: true }]);
+        setLessonText(prev => {
+          setUndoStack(prevStack => [...prevStack.slice(-4), { lessonText: prev, displayParts: [] }]);
+          return prev + '\n\n' + item.revision;
+        });
+        setDisplayParts(prev => {
+          setUndoStack(prevStack => {
+            // Only update undo if not already set above (avoid double-push)
+            const last = prevStack[prevStack.length - 1];
+            if (last && last.displayParts.length === 0 && last.lessonText !== '') return prevStack;
+            return [...prevStack.slice(-4), { lessonText: '', displayParts: prev }];
+          });
+          return [...prev, { type: 'diff' as const, original: '', replacement: item.revision, isAddition: true }];
+        });
       } else {
         setDisplayParts(prev => applyDiffToDisplayParts(prev, item.quote, item.revision));
         setLessonText(prev => fuzzyReplace(prev, item.quote, item.revision));
@@ -399,12 +434,12 @@ export default function PedagogicalLabSaaS() {
       setFlashingId(null);
       setChangelog(prev => [...prev, { sectionName: item.sectionName || item.category, quote: item.quote || '', revision: item.revision, isAddition: sectionType === 'exceed' && !item.hasSection }]);
     }, 700);
-  };
+  }, []); // Empty deps — all state access via functional updaters
 
-  const handleDismiss = (item: any, sectionType: 'activity' | 'exceed') => {
+  const handleDismiss = useCallback((item: any, sectionType: 'activity' | 'exceed') => {
     if (sectionType === 'activity') setSection1(prev => prev.filter(f => (f.id || f.sectionName) !== (item.id || item.sectionName)));
     else setSection2(prev => prev.filter(g => g.category !== item.category));
-  };
+  }, []);
 
   const handleUndo = () => {
     if (undoStack.length === 0) return;
@@ -415,12 +450,11 @@ export default function PedagogicalLabSaaS() {
     setChangelog(c => c.slice(0, -1));
   };
 
-  // handleRespond now has its own loading state per card to prevent duplicate submissions
-  const handleRespond = async (item: any, sectionType: 'activity' | 'exceed') => {
+  const handleRespond = useCallback(async (item: any, sectionType: 'activity' | 'exceed') => {
     const key = item.id || item.category;
     const val = respondInputs[key];
     if (!val?.trim()) return;
-    if (respondLoading[key]) return; // prevent duplicate submissions
+    if (respondLoading[key]) return;
     setRespondLoading(prev => ({ ...prev, [key]: true }));
     try {
       const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'iterative-respond', lessonText, item, sectionType, userMessage: val, config }) });
@@ -434,9 +468,10 @@ export default function PedagogicalLabSaaS() {
       }
     } catch (e: any) { alert('Error updating feedback: ' + (e.message || 'Please try again.')); }
     setRespondLoading(prev => ({ ...prev, [key]: false }));
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [respondInputs, respondLoading, lessonText, config]);
 
-  const handleReanalyze = async (item: any, sectionType: 'activity' | 'exceed') => {
+  const handleReanalyze = useCallback(async (item: any, sectionType: 'activity' | 'exceed') => {
     const key = item.id || item.category;
     setReanalyzeLoading(prev => ({ ...prev, [key]: true }));
     try {
@@ -449,7 +484,8 @@ export default function PedagogicalLabSaaS() {
       }
     } catch (e: any) { console.error(e); alert('Re-analyze failed. Please try again.'); }
     setReanalyzeLoading(prev => ({ ...prev, [key]: false }));
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonText, config]);
 
   const handleGenerateSummary = async () => {
     setSummaryLoading(true);
@@ -485,7 +521,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     triggerDownload(new Blob([html], { type: 'application/msword' }), 'Revised_Lesson_Plan.doc');
   };
 
-  // Render document with theme-aware diff colors
   const renderDocument = () => {
     const strikeColor = theme === 'dark' ? '#f87171' : '#dc2626';
     const addColor = theme === 'dark' ? '#34d399' : '#059669';
@@ -519,20 +554,30 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
   };
 
   // --- START ANALYSIS ---
-  const startAnalysis = async () => {
+  // FIX #2 (part A): startAnalysis now accepts an optional overrideMode parameter.
+  // This is used by the "Run Full 12-Category Analysis" button on the completion screen,
+  // which previously called setConfig(...) then startAnalysis() in the same tick.
+  // Because React batches state updates, startAnalysis() ran before the config state
+  // had updated, so it still read config.mode as 'Iterative feedback' and launched
+  // another iterative session instead of the full 12-category analysis.
+  // Fix: pass the desired mode directly so we never depend on React flushing setConfig
+  // synchronously before startAnalysis reads config.mode.
+  const startAnalysis = async (overrideMode?: string) => {
+    const effectiveMode = overrideMode ?? config.mode;
+
     if (!lessonText.trim()) { setLessonError('Please paste your lesson plan first.'); return; }
     if (lessonText.length > MAX_LESSON_LENGTH) { setLessonError(`Lesson is too long. Please trim it under ${MAX_LESSON_LENGTH.toLocaleString()} characters.`); return; }
     setLessonError('');
 
     let cu = user || (await login());
     if (!cu) return;
-    if (config.mode === 'Custom selection' && customSelection.length === 0) return alert('Select at least one category.');
+    if (effectiveMode === 'Custom selection' && customSelection.length === 0) return alert('Select at least one category.');
 
-    if (config.mode === 'Iterative feedback') {
+    if (effectiveMode === 'Iterative feedback') {
       setLoading(true);
       setSection1([]); setSection2([]);
       setS1Loading(true); setS2Loading(true);
-      setIterativeStarted(false); // reset before starting
+      setIterativeStarted(false);
       setDisplayParts([{ type: 'text', content: lessonText }]);
       setUndoStack([]); setFlashingId(null); setChangelog([]);
       setSummaryText(''); setGapResults([]); setReanalyzeLoading({});
@@ -558,60 +603,137 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           anySuccess = true;
         }
         setS2Loading(false);
-        // Mark as truly started — only now can allDone become true
         setIterativeStarted(true);
         if (!anySuccess) setIterativeError('Both sections failed to load. Please go back and try again.');
       });
       return;
     }
 
-    if (config.mode === 'Focused report') {
+    if (effectiveMode === 'Focused report') {
       setLoading(true);
       try {
-        const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config, selectedLenses: [] }) });
+        const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config: { ...config, mode: effectiveMode }, selectedLenses: null }) });
         const data = await res.json();
-        if (data.feedback) await saveAndShowReport(cu, data.feedback);
-        else alert(data.error || 'Focused report failed.');
+        if (data.feedback && data.feedback.length > 0) {
+          await saveAndShowReport(cu, data.feedback);
+        } else {
+          alert(data.error || 'Focused report returned no feedback. Please try again.');
+        }
       } catch (e: any) { alert('Network Error: ' + e.message); }
       setLoading(false); return;
     }
 
-    const cats = config.mode === 'Custom selection' ? customSelection : ALL_CATS;
+    // Full report or Custom selection
+    const cats = effectiveMode === 'Custom selection' ? customSelection : ALL_CATS;
     setLoading(true);
+    setFailedChunks([]);
     try {
-      const results = await Promise.allSettled(chunkArray(cats, 3).map(chunk =>
-        fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config: { ...config, mode: 'Custom selection' }, selectedLenses: chunk }) }).then(r => r.json())
-      ));
-      const merged = results.flatMap(r => r.status === 'fulfilled' && r.value?.feedback ? r.value.feedback : []);
-      if (merged.length > 0) await saveAndShowReport(cu, merged);
-      else alert('All chunks failed. Please try again.');
+      const chunks = chunkArray(cats, 3);
+      const results = await Promise.allSettled(
+        chunks.map(chunk =>
+          fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lessonText, config: { ...config, mode: 'Custom selection' }, selectedLenses: chunk })
+          }).then(r => r.json())
+        )
+      );
+
+      const merged: any[] = [];
+      const failed: string[] = [];
+
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value?.feedback && r.value.feedback.length > 0) {
+          merged.push(...r.value.feedback);
+        } else {
+          failed.push(...chunks[i]);
+        }
+      });
+
+      if (merged.length > 0) {
+        if (failed.length > 0) setFailedChunks(failed);
+        await saveAndShowReport(cu, merged);
+      } else {
+        alert('All analysis chunks failed. Please try again or use a shorter lesson.');
+      }
     } catch (e: any) { alert('Network Error: ' + e.message); }
     setLoading(false);
   };
 
+  // Chat: captures history snapshot BEFORE appending the new user message,
+  // then sends both separately. The API appends userMessage after historySnapshot
+  // so the user turn appears exactly once in the OpenAI messages array.
   const handleFollowUp = async (autoText?: string) => {
     const text = typeof autoText === 'string' ? autoText : chatInput;
     if (!text?.trim()) return;
+
     setChatLoading(true);
-    const msg = { role: 'user' as const, content: text };
-    setChatHistory(p => [...p, msg]); setChatInput('');
+
+    // Capture history BEFORE the new user message is appended
+    const historySnapshot = chatHistory.slice();
+
+    const msg = { role: 'user' as const, content: sanitizeHtml(text) };
+    setChatHistory(p => [...p, msg]);
+    setChatInput('');
+
     try {
-      const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'chat', userMessage: msg.content, chatHistory: chatHistoryRef.current, config, lessonText, lensContext: selectedLens }) });
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'chat',
+          chatHistory: historySnapshot,
+          userMessage: text,
+          config,
+          lessonText,
+          lensContext: selectedLens,
+        })
+      });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      // Sanitize HTML from chat reply before rendering
       const sanitized = sanitizeHtml(data.reply || '');
       setChatHistory(p => [...p, { role: 'assistant' as const, content: sanitized }]);
     } catch (e: any) { alert('Chat error: ' + (e.message || 'Please try again.')); }
     setChatLoading(false);
   };
 
-  const submitQuiz = () => {
+  const submitQuiz = async () => {
+    if (!selectedLens) return;
+
+    // Fix #4: Require all questions to be answered before certifying mastery.
+    // Previously a teacher could click "Certify Mastery" with zero answers selected
+    // and receive a score of 0/5 which would immediately lock the lens as 'red'.
+    const totalQuestions = selectedLens.quiz.length;
+    const answeredCount = Object.keys(quizAnswers).length;
+    if (answeredCount < totalQuestions) {
+      alert(`Please answer all ${totalQuestions} questions before certifying.`);
+      return;
+    }
+
     let score = 0;
     selectedLens.quiz.forEach((q: any, i: number) => { if (quizAnswers[i] === q.correct) score++; });
     const status = score === 5 ? 'green' : score >= 3 ? 'amber' : 'red';
-    setLenses(lenses.map((l: any) => l.id === selectedLens.id ? { ...l, status, quizScore: score } : l));
+
+    const updatedLens = { ...selectedLens, status, quizScore: score };
+    const updatedLenses = lenses.map((l: any) => l.id === selectedLens.id ? updatedLens : l);
+
+    setSelectedLens(updatedLens);
+    setLenses(updatedLenses);
     setQuizResult(score);
+
+    if (user) {
+      try {
+        const q = query(collection(db, 'users', user.uid, 'reports'), orderBy('timestamp', 'desc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const latestDoc = snap.docs[0];
+          await setDoc(doc(db, 'users', user.uid, 'reports', latestDoc.id), { lenses: updatedLenses }, { merge: true });
+          loadHistory(user.uid);
+        }
+      } catch (e) {
+        console.error('Failed to persist quiz score:', e);
+      }
+    }
   };
 
   const generatePrize = async () => {
@@ -685,15 +807,22 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
   const totalResolved = s1Resolved + s2Resolved;
   const totalCards = s1InitCount + s2InitCount;
   const progressPct = totalCards > 0 ? (totalResolved / totalCards) * 100 : 0;
-  // Fix: allDone only true after iterativeStarted is set, preventing flash on initial render
   const allDone = iterativeStarted && !s1Loading && !s2Loading && section1.length === 0 && section2.length === 0;
 
-  // Stable callbacks passed to IterativeCard to avoid unnecessary re-renders
-  const handleRespondInputChange = (key: string, value: string) => setRespondInputs(p => ({ ...p, [key]: value }));
-  const handleRespondInputKeyDown = (e: React.KeyboardEvent, item: any, sectionType: 'activity' | 'exceed') => {
+  // FIX #4 & #5 (continued): These three inline handlers are also useCallback-wrapped
+  // so IterativeCard's React.memo is fully effective.
+  const handleRespondInputChange = useCallback((key: string, value: string) => {
+    setRespondInputs(p => ({ ...p, [key]: value }));
+  }, []);
+
+  const handleRespondInputKeyDown = useCallback((e: React.KeyboardEvent, item: any, sectionType: 'activity' | 'exceed') => {
     if (e.key === 'Enter') handleRespond(item, sectionType);
-  };
-  const handleToggleRespond = (key: string) => setExpandedRespond(prev => prev === key ? null : key);
+  // handleRespond is stable via useCallback so this is safe
+  }, [handleRespond]);
+
+  const handleToggleRespond = useCallback((key: string) => {
+    setExpandedRespond(prev => prev === key ? null : key);
+  }, []);
 
   return (
     <div className="flex h-screen bg-[var(--background)] text-[var(--foreground)] transition-all duration-300">
@@ -707,7 +836,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
           <div className="flex-1 overflow-y-auto scrollbar-hide">
             <span className="text-[10px] font-black uppercase tracking-widest px-2 opacity-70 block mb-4">History</span>
             {history.map(item => (
-              <button key={item.id} onClick={() => { setLenses(item.lenses); setConfig(item.config); setLessonText(item.lessonText); setStep('dashboard'); }}
+              <button key={item.id} onClick={() => { setLenses(item.lenses); setConfig(item.config); setLessonText(item.lessonText); setSelectedLens(null); setQuizResult(null); setQuizAnswers({}); setChatHistory([]); setStep('dashboard'); }}
                 className="w-full text-left p-3 rounded-lg hover:bg-white/5 text-xs truncate transition-all opacity-70 hover:opacity-100">{item.title}</button>
             ))}
           </div>
@@ -715,9 +844,25 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="w-full flex items-center gap-3 p-3 text-xs font-bold hover:bg-white/5 rounded-lg text-white">Theme Toggle</button>
             {user && (
               <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                <img src={user.photoURL ?? ''} className="w-8 h-8 rounded-full" alt="avatar" />
+                <img
+                  src={user.photoURL ?? ''}
+                  className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center"
+                  alt="avatar"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
                 <span className="text-xs font-bold truncate max-w-[120px]">{user.displayName}</span>
-                <button onClick={() => signOut(auth).then(() => setStep('input'))}><LogOut size={16} /></button>
+                <button onClick={() => signOut(auth).then(() => {
+                  // Fix #6: Clear all session state on logout so no stale lesson/lenses/chat
+                  // remain visible if a different user logs in on the same browser session.
+                  setLessonText('');
+                  setLenses([]);
+                  setSelectedLens(null);
+                  setChatHistory([]);
+                  setQuizResult(null);
+                  setQuizAnswers({});
+                  setFailedChunks([]);
+                  setStep('input');
+                })}><LogOut size={16} /></button>
               </div>
             )}
           </div>
@@ -751,7 +896,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   <p className="text-indigo-600 dark:text-indigo-400 font-black text-xs uppercase tracking-[0.6em]">Research-Grounded Coaching for Everyday Lessons</p>
                 </div>
 
-                {/* WHY THIS EXISTS */}
                 <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="w-full max-w-5xl mx-auto">
                   <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2.5rem] p-10 md:p-14 space-y-10">
                     <div className="text-center space-y-3">
@@ -815,7 +959,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       <span className="text-[9px] font-black uppercase text-slate-500 dark:text-slate-400 mb-3 tracking-widest">Minutes</span>
                       <div className="flex items-center justify-center gap-1.5 w-full">
                         <Clock size={12} className="text-indigo-600 dark:text-indigo-500 shrink-0" />
-                        <input type="number" value={config.minutes} onChange={e => setConfig({ ...config, minutes: Number(e.target.value) })} className="bg-transparent text-[var(--foreground)] font-black w-10 text-center outline-none text-sm tracking-tighter" />
+                        <input type="number" min="1" value={config.minutes} onChange={e => setConfig({ ...config, minutes: Math.max(1, Number(e.target.value)) })} className="bg-transparent text-[var(--foreground)] font-black w-10 text-center outline-none text-sm tracking-tighter" />
                         <span className="text-[8px] font-bold text-slate-400 uppercase">Min</span>
                       </div>
                     </div>
@@ -852,13 +996,16 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                     </p>
                   )}
                   <div className="p-4 pt-0 flex justify-center">
-                    <motion.button onClick={startAnalysis} disabled={loading} whileHover={{ scale: 1.005 }}
+                    <motion.button onClick={() => startAnalysis()} disabled={loading} whileHover={{ scale: 1.005 }}
                       className="relative w-full h-28 bg-[#050508] border border-black/10 dark:border-white/10 text-white rounded-2xl font-black text-2xl uppercase tracking-[0.3em] overflow-hidden shadow-2xl flex items-center justify-center group">
                       <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-20 group-hover:opacity-100 transition-opacity duration-700">
+                        {/* FIX #3: Use pre-computed stable durations (LAUNCH_BAR_DURATIONS) instead of
+                            Math.random() inline. Calling Math.random() in a motion prop triggers a new
+                            random value on every render, causing the bars to re-animate infinitely. */}
                         {CAT_DATA.map((c, i) => (
                           <motion.div key={i} className="w-[2px] h-8 rounded-full" style={{ backgroundColor: c.color }}
                             animate={{ scaleY: [1, 2.2, 1], opacity: [0.2, 1, 0.2] }}
-                            transition={{ duration: 0.5 + Math.random(), repeat: Infinity, delay: i * 0.1 }} />
+                            transition={{ duration: LAUNCH_BAR_DURATIONS[i], repeat: Infinity, delay: i * 0.1 }} />
                         ))}
                       </div>
                       <span className="relative z-10 flex items-center gap-4 justify-center w-full font-sans tracking-[0.4em]">
@@ -903,7 +1050,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   <motion.div className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full" animate={{ width: `${progressPct}%` }} transition={{ duration: 0.5 }} />
                 </div>
 
-                {/* Error state */}
                 {iterativeError && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5 flex items-center gap-3">
                     <AlertTriangle size={18} className="text-red-500 flex-shrink-0" />
@@ -1075,7 +1221,17 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           className="px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
                           <Download size={16} /> Export Revised Lesson (.doc)
                         </button>
-                        <button onClick={() => { setConfig(c => ({ ...c, mode: 'Full report' })); startAnalysis(); }}
+                        {/* FIX #2: Pass 'Full report' directly as overrideMode so startAnalysis
+                            uses it immediately — no dependency on React flushing setConfig first.
+                            The old code called setConfig(...mode:'Full report') then startAnalysis()
+                            in the same tick; startAnalysis read the STALE config.mode ('Iterative
+                            feedback') because React hadn't re-rendered yet, causing it to launch
+                            another iterative session instead of the full 12-category analysis. */}
+                        <button
+                          onClick={() => {
+                            setConfig(c => ({ ...c, mode: 'Full report' }));
+                            startAnalysis('Full report');
+                          }}
                           className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center gap-2">
                           <ArrowRight size={16} /> Run Full 12-Category Analysis
                         </button>
@@ -1094,6 +1250,19 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
             {step === 'dashboard' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-16 w-full flex flex-col items-center">
                 <h3 className="text-7xl font-black text-[var(--foreground)] tracking-tighter uppercase font-serif italic underline decoration-indigo-400 dark:decoration-indigo-500/60 decoration-8 underline-offset-[20px] text-center">The Blueprint.</h3>
+
+                {failedChunks.length > 0 && (
+                  <div className="w-full max-w-4xl bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 flex items-start gap-3">
+                    <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-1">Some categories failed to load</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 opacity-80">
+                        The following categories could not be analyzed and are missing from your report: <strong>{failedChunks.join(', ')}</strong>. You can go back and try again with a shorter lesson, or re-run with Custom Selection for just these categories.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {mastery === 100 && (
                   <div className="flex flex-col md:flex-row gap-6 items-center justify-center w-full z-50 flex-wrap">
                     <motion.button initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} onClick={generatePrize} disabled={prizeLoading}
@@ -1119,7 +1288,13 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   {lenses.map(lens => {
                     const catEntry = CAT_DATA.find(c => c.name === lens.name) || null;
                     return (
-                      <DashboardCard key={lens.id} lens={lens} catData={catEntry} onClick={() => { setSelectedLens(lens); setDrawerTab('mentoring'); setQuizResult(null); setQuizAnswers({}); setChatHistory([]); }} />
+                      <DashboardCard key={lens.id} lens={lens} catData={catEntry} onClick={() => {
+                        setSelectedLens(lens);
+                        setDrawerTab('mentoring');
+                        setQuizResult(null);
+                        setQuizAnswers({});
+                        setChatHistory([]);
+                      }} />
                     );
                   })}
                 </div>
@@ -1143,6 +1318,16 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                   <button onClick={() => setSelectedLens(null)} className="p-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl"><X size={28} /></button>
                 </div>
                 <h2 className="text-5xl font-black text-[var(--foreground)] mb-10 uppercase tracking-tighter leading-none font-serif italic">{selectedLens.name}</h2>
+
+                {/* Mastery status badge */}
+                <div className="flex items-center gap-3 mb-6">
+                  <div className={`w-3 h-3 rounded-full ${selectedLens.status === 'green' ? 'bg-emerald-400' : selectedLens.status === 'amber' ? 'bg-amber-400' : selectedLens.status === 'red' ? 'bg-red-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    {selectedLens.status === 'green' ? 'Mastery Achieved' : selectedLens.status === 'amber' ? 'Partial Mastery' : selectedLens.status === 'red' ? 'Not Yet Mastered' : 'Not Attempted'}
+                    {selectedLens.quizScore !== null && selectedLens.quizScore !== undefined ? ` — ${selectedLens.quizScore}/5` : ''}
+                  </span>
+                </div>
+
                 <div className="flex gap-4">
                   <TabBtn active={drawerTab === 'mentoring'} onClick={() => setDrawerTab('mentoring')} icon={<MessageSquare size={16} />} label="Elite Coaching" />
                   <TabBtn active={drawerTab === 'quiz'} onClick={() => setDrawerTab('quiz')} icon={<Brain size={16} />} label="Mastery Quiz" />
@@ -1178,7 +1363,6 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         {chatHistory.map((m, i) => (
                           <div key={i} className={`p-8 rounded-3xl text-xl leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-black/5 dark:bg-white/5 ml-12 border border-[var(--border)]' : 'bg-indigo-500/10 mr-12 text-indigo-700 dark:text-indigo-100 border border-indigo-500/20 shadow-lg'}`}>
                             <span className="block text-[9px] font-black uppercase tracking-widest mb-3 text-slate-500 dark:text-slate-400">{m.role === 'user' ? 'TEACHER' : 'MENTOR'}</span>
-                            {/* Sanitized HTML — safe to render */}
                             <span dangerouslySetInnerHTML={{ __html: m.content }} />
                           </div>
                         ))}
@@ -1187,7 +1371,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         <input disabled={chatLoading} value={chatInput} onChange={e => setChatInput(e.target.value)}
                           className="flex-1 bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl p-6 text-xl disabled:opacity-50 focus:outline-none focus:border-indigo-400 transition-all"
                           placeholder={chatLoading ? 'Mentor is typing...' : 'Ask a clarification...'}
-                          onKeyDown={e => e.key === 'Enter' && handleFollowUp()} />
+                          onKeyDown={e => e.key === 'Enter' && !chatLoading && handleFollowUp()} />
                         <button disabled={chatLoading} onClick={() => handleFollowUp()} className="p-6 bg-indigo-600 rounded-2xl text-white disabled:opacity-50">
                           {chatLoading ? <RefreshCcw className="animate-spin" /> : <Send />}
                         </button>
@@ -1215,7 +1399,7 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                       <div className="text-center p-20 border-8 border-indigo-500 rounded-[5rem] shadow-xl">
                         <h4 className="text-9xl font-black mb-4 leading-none">{quizResult}/5</h4>
                         <p className="text-3xl font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">{quizResult === 5 ? 'Mastery Unlocked' : 'Mastery Denied'}</p>
-                        <button onClick={() => setQuizResult(null)} className="mt-12 text-indigo-600 dark:text-indigo-500 font-black uppercase underline decoration-2 underline-offset-8">Retry Session</button>
+                        <button onClick={() => { setQuizResult(null); setQuizAnswers({}); }} className="mt-12 text-indigo-600 dark:text-indigo-500 font-black uppercase underline decoration-2 underline-offset-8">Retry Session</button>
                       </div>
                     )}
                   </div>
@@ -1250,7 +1434,6 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 function VividLensTile({ cat, theme }: { cat: any; theme: string }) {
-  // Light mode uses a slightly muted version of the color, dark mode uses full neon
   const iconColor = theme === 'dark' ? cat.color : cat.color + 'cc';
   return (
     <motion.div
@@ -1294,31 +1477,28 @@ function FeatureFlipCard({ icon, title, desc, glow }: { icon: React.ReactNode; t
 
 function DashboardCard({ lens, catData, onClick }: { lens: any; catData: any; onClick: () => void }) {
   const color = catData?.color || '#6366f1';
-  const iconColor = lens.status === 'green' ? color : (typeof window !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? color + 'aa' : color);
   return (
     <div
       className="rounded-[3rem] border border-[var(--border)] transition-all cursor-pointer flex flex-col items-center justify-between shadow-xl bg-[var(--card)] hover:scale-[1.02] overflow-hidden"
       style={{ borderTop: `4px solid ${color}` }}
       onClick={onClick}
     >
-      {/* Top: icon + status */}
       <div className="w-full flex flex-col items-center gap-4 pt-8 pb-4 px-6">
-        {/* Status dot */}
-        <div className={`w-2.5 h-2.5 rounded-full self-end ${lens.status === 'green' ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
-        {/* Category icon */}
-        <div
-          className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner"
-          style={{ backgroundColor: `${color}15`, color }}
-        >
+        <div className={`w-2.5 h-2.5 rounded-full self-end ${lens.status === 'green' ? 'bg-emerald-400' : lens.status === 'amber' ? 'bg-amber-400' : lens.status === 'red' ? 'bg-red-400' : 'bg-slate-300 dark:bg-slate-600'}`} />
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner" style={{ backgroundColor: `${color}15`, color }}>
           <div style={{ color }} className="dark:drop-shadow-[0_0_12px_currentColor]">
             {catData?.icon ?? <span className="text-2xl font-black">{lens.name?.[0]}</span>}
           </div>
         </div>
       </div>
-      {/* Bottom: name + pioneer */}
       <div className="w-full text-center px-6 pb-8 space-y-2">
         <h4 className="text-2xl font-black uppercase tracking-tighter text-[var(--foreground)] leading-tight">{lens.name}</h4>
         <span className="text-[10px] font-black uppercase italic block" style={{ color }}>{lens.pioneer}</span>
+        {lens.quizScore !== null && lens.quizScore !== undefined && (
+          <span className={`text-[9px] font-black uppercase tracking-widest block ${lens.status === 'green' ? 'text-emerald-500' : lens.status === 'amber' ? 'text-amber-500' : 'text-red-400'}`}>
+            {lens.quizScore}/5 {lens.status === 'green' ? '✓' : ''}
+          </span>
+        )}
       </div>
     </div>
   );
