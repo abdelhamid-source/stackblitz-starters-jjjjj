@@ -63,6 +63,32 @@ const CAT_DATA = [
 // infinite flicker/re-animation on the Launch Feedback button bars.
 const LAUNCH_BAR_DURATIONS = CAT_DATA.map(() => 0.5 + Math.random());
 
+// PIONEER MAP — Every category has exactly one correct researcher tied to its theory.
+// This is applied as a hard overwrite after every API response so the AI can never
+// invent or hallucinate a pioneer name. The map is the single source of truth.
+const PIONEER_MAP: Record<string, string> = {
+  'Clarity':         'John Hattie',           // Visible Learning — effect sizes & learning intentions
+  'Alignment':       'Ralph Tyler',            // Tyler Rationale — objectives/instruction/assessment alignment
+  'Inclusivity':     'David Rose & Anne Meyer',// Universal Design for Learning (UDL)
+  'Scaffolding':     'Lev Vygotsky',           // Zone of Proximal Development
+  'Differentiation': 'Carol Ann Tomlinson',    // Differentiated Instruction model
+  'Objectives':      'Benjamin Bloom',         // Bloom\'s Taxonomy (revised by Anderson & Krathwohl)
+  'Assessments':     'Dylan Wiliam',           // Assessment for Learning / formative assessment
+  'Engagement':      'Phil Schlechty',         // Schlechty\'s Levels of Engagement
+  'Strategies':      'Robert Marzano',         // Classroom Instruction That Works — nine high-yield strategies
+  'Materials':       'Grant Wiggins',          // Understanding by Design / backward design
+  'Collaboration':   'David & Roger Johnson',  // Cooperative Learning — structured interdependence
+  'Closure':         'Madeline Hunter',        // Lesson Design Model — structured lesson cycle
+};
+
+// Overwrite pioneer field on any array of lens objects using the map above.
+// Call this after EVERY API response that returns lens/feedback objects.
+const applyPioneers = (lenses: any[]): any[] =>
+  lenses.map(l => ({
+    ...l,
+    pioneer: PIONEER_MAP[l.name] ?? l.pioneer ?? '',
+  }));
+
 const EXCEED_COLORS: Record<string, string> = {
   'Scaffolding': '#ff9900',
   'Differentiation': '#bc13fe',
@@ -380,7 +406,8 @@ export default function PedagogicalLabSaaS() {
 
   const saveAndShowReport = async (cu: User, fb: any[]) => {
     const id = Date.now().toString();
-    const processed = fb.map(f => ({ ...f, status: 'locked', quizScore: null }));
+    // Apply pioneer overwrite before saving — the AI never controls pioneer names
+    const processed = applyPioneers(fb).map(f => ({ ...f, status: 'locked', quizScore: null }));
     await setDoc(doc(db, 'users', cu.uid, 'reports', id), { lenses: processed, config, lessonText, timestamp: Date.now(), title: lessonText.substring(0, 30) + '...' });
     setLenses(processed); setStep('dashboard'); loadHistory(cu.uid);
   };
@@ -615,7 +642,10 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
         const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lessonText, config: { ...config, mode: effectiveMode }, selectedLenses: null }) });
         const data = await res.json();
         if (data.feedback && data.feedback.length > 0) {
-          await saveAndShowReport(cu, data.feedback);
+          // Code-side enforcement: slice to exactly 3 regardless of what AI returned,
+          // then overwrite pioneer names from the hardcoded map
+          const enforced = applyPioneers(data.feedback.slice(0, 3));
+          await saveAndShowReport(cu, enforced);
         } else {
           alert(data.error || 'Focused report returned no feedback. Please try again.');
         }
@@ -651,8 +681,21 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
       });
 
       if (merged.length > 0) {
-        if (failed.length > 0) setFailedChunks(failed);
-        await saveAndShowReport(cu, merged);
+        // Code-side enforcement for Custom selection:
+        // Filter to only categories actually requested, in case AI added extras.
+        // Then overwrite pioneer names from the hardcoded map.
+        const filtered = effectiveMode === 'Custom selection'
+          ? merged.filter(f => cats.includes(f.name))
+          : merged;
+        const withPioneers = applyPioneers(filtered);
+
+        // Track any selected categories that came back missing
+        const returnedNames = withPioneers.map(f => f.name);
+        const missingCats = cats.filter(c => !returnedNames.includes(c));
+        const allFailed = [...failed, ...missingCats];
+
+        if (allFailed.length > 0) setFailedChunks(allFailed);
+        await saveAndShowReport(cu, withPioneers);
       } else {
         alert('All analysis chunks failed. Please try again or use a shorter lesson.');
       }
