@@ -9,7 +9,6 @@ export async function POST(req: Request) {
     const { lessonText, config, selectedLenses, type, chatHistory, userMessage, lensContext } = body;
 
     // --- INPUT VALIDATION ---
-    // type is optional — missing type falls through to main analysis (full/focused/custom)
     if (type && typeof type !== 'string') return NextResponse.json({ error: 'Invalid request type.' }, { status: 400 });
     if (!config) return NextResponse.json({ error: 'Missing config.' }, { status: 400 });
 
@@ -17,7 +16,6 @@ export async function POST(req: Request) {
     if (type && textRequiredTypes.includes(type) && (!lessonText || typeof lessonText !== 'string' || lessonText.trim().length === 0)) {
       return NextResponse.json({ error: 'Lesson text is required.' }, { status: 400 });
     }
-    // Main analysis (no type) also requires lesson text
     if (!type && (!lessonText || typeof lessonText !== 'string' || lessonText.trim().length === 0)) {
       return NextResponse.json({ error: 'Lesson text is required.' }, { status: 400 });
     }
@@ -30,7 +28,6 @@ export async function POST(req: Request) {
     const openai = new OpenAI({ apiKey });
 
     // --- PRIZE ---
-    // gpt-4o for quality — 15 detailed sections warrant the stronger model
     if (type === 'prize') {
       const prizePrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout — this must shape your vocabulary, phrasing, and attitude in every section. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". Every section must be written for ${config.profile} learners in a ${config.grade} ${config.subject} class. State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 3500, messages: [{ role: 'system', content: prizePrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
@@ -46,6 +43,10 @@ Return ONLY JSON: { "html": string, "requiresImage": boolean, "imagePrompt": str
 HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grids. MINIMUM 7 items per activity. Put "{{IMAGE_PLACEHOLDER}}" where images go.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 6000, messages: [{ role: 'system', content: matPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       let obj = JSON.parse(r.choices[0].message.content || '{}');
+      // Fix #11: Guard obj.html before calling .replace() on it.
+      // If the AI returns a JSON object without an 'html' key (malformed response),
+      // calling .replace() on undefined throws a TypeError that crashes the handler.
+      if (!obj.html) obj.html = '';
       if (obj.requiresImage && obj.imagePrompt) {
         try {
           const fp = obj.imagePrompt + ' STRICT: 1 object. Black-and-white clipart line-art, white background. No humans/faces/eyes.';
@@ -65,7 +66,6 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
     }
 
     // --- GAMIFIER ---
-    // 1500 tokens to prevent CSV truncation on longer questions
     if (type === 'gamifier') {
       const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a 10-question MCQ trivia game perfectly calibrated for Grade ${config.grade} ${config.subject} ${config.profile} learners in a ${config.minutes}-minute class. Questions must match the vocabulary, complexity, and content expectations for ${config.grade} ${config.profile} students. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4. Output all 10 questions completely — do NOT truncate.`;
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1500, messages: [{ role: 'system', content: gp }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
@@ -80,9 +80,47 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
     }
 
     // --- CHAT ---
+    // FIX #8: The client sends:
+    //   - chatHistory: the conversation BEFORE the new user message (historySnapshot)
+    //   - userMessage: the new user message separately
+    //
+    // The previous version spread chatHistory directly, which already contained the new
+    // user message at the end (because the client pushed it to state before snapshotting).
+    // That caused the user message to appear twice in the OpenAI context.
+    //
+    // The corrected client now sends historySnapshot (WITHOUT the new message) + userMessage
+    // separately. So this route must explicitly append { role: 'user', content: userMessage }
+    // after spreading chatHistory to complete the message list correctly.
+    // Without this append, the AI receives the prior context but the actual question is missing.
     if (type === 'chat') {
+      if (!userMessage || typeof userMessage !== 'string' || !userMessage.trim()) {
+        return NextResponse.json({ error: 'Chat message is required.' }, { status: 400 });
+      }
       const sc = `You are a Mentor Coach in a TEXT CHAT with a teacher. Adopt a "${config.tone}" tone — this must shape how you phrase every sentence. Grade: ${config?.grade}, Subject: ${config?.subject}, Profile: ${config?.profile}, Time: ${config?.minutes}m. Lesson (500 chars): "${(lessonText || '').substring(0, 500)}". Focus: ${lensContext?.name}, Theory: ${lensContext?.theory}. Rules: warm, natural, concise. Use HTML with <br><br> spacing and inline CSS color headings. Reference their specific lesson. NO MARKDOWN. End with a question.`;
-      const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 800, messages: [{ role: 'system', content: sc }, ...(chatHistory || []), { role: 'user', content: userMessage || '' }] });
+
+      // Fix #10: Sanitize chatHistory before spreading to OpenAI.
+      // Malformed or unexpected items from the client (missing role/content, wrong role values)
+      // cause an OpenAI 400 error that surfaces as a generic "something went wrong" to the user.
+      // Filter to only well-formed {role: 'user'|'assistant', content: string} objects.
+      const validHistory = (chatHistory || []).filter(
+        (m: any) =>
+          m &&
+          typeof m === 'object' &&
+          (m.role === 'user' || m.role === 'assistant') &&
+          typeof m.content === 'string' &&
+          m.content.trim().length > 0
+      );
+      const r = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 800,
+        messages: [
+          { role: 'system', content: sc },
+          // Spread sanitized prior history, then append the new user message.
+          // This ensures the message appears exactly once in the correct position.
+          ...validHistory,
+          { role: 'user', content: userMessage },
+        ]
+      });
       return NextResponse.json({ reply: r.choices[0].message.content?.replace(/[*#]/g, '') });
     }
 
@@ -148,20 +186,26 @@ Return ONLY JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "
     if (type === 'iterative-respond') {
       const { item, sectionType } = body;
       if (!item) return NextResponse.json({ error: 'Missing item.' }, { status: 400 });
+
+      // Fix #9: Sanitize all item fields before injecting into template strings.
+      // AI-returned values (quote, pioneer, category, etc.) can contain backticks or
+      // ${...} sequences that corrupt the prompt when interpolated into a template literal.
+      const safeStr = (v: any): string => String(v || '').replace(/`/g, "'").replace(/\$\{/g, '${');
+
       let prompt = '';
       if (sectionType === 'activity') {
-        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your feedback on the "${item.sectionName}" section.
-Original quote: "${item.quote}"
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your feedback on the "${safeStr(item.sectionName)}" section.
+Original quote: "${safeStr(item.quote)}"
 Teacher's response: "${userMessage}"
 Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
 Update your feedback and revision to reflect and directly address the teacher's response. "feedback" must be THOROUGH (4–6 sentences). "revision" must be RICH, DETAILED, immediately usable. Quote must be EXACT verbatim substring (max 25 words).
-Return ONLY JSON: { "feedback": { "id": "${item.id}", "sectionName": "${item.sectionName}", "quote": "...", "feedback": "...", "revision": "...", "priority": "${item.priority || 'MEDIUM'}", "notFound": false } }`;
+Return ONLY JSON: { "feedback": { "id": "${safeStr(item.id)}", "sectionName": "${safeStr(item.sectionName)}", "quote": "...", "feedback": "...", "revision": "...", "priority": "${safeStr(item.priority || 'MEDIUM')}", "notFound": false } }`;
       } else {
-        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your "${item.category}" exceed-expectations guidance.
+        prompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. The teacher responded to your "${safeStr(item.category)}" exceed-expectations guidance.
 Teacher's response: "${userMessage}"
 Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, ${config.minutes}m.
 Update your guidance. "currentLevel" must be DETAILED (3–4 sentences) if hasSection true. "revision" must be RICH and THOROUGH (5–8 sentences minimum). hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words.
-Return ONLY JSON: { "feedback": { "category": "${item.category}", "pioneer": "${item.pioneer}", "hasSection": ${item.hasSection}, "quote": "${item.quote || ''}", "currentLevel": "...", "revision": "...", "addWhere": "${item.addWhere || ''}" } }`;
+Return ONLY JSON: { "feedback": { "category": "${safeStr(item.category)}", "pioneer": "${safeStr(item.pioneer)}", "hasSection": ${item.hasSection}, "quote": "${safeStr(item.quote || '')}", "currentLevel": "...", "revision": "...", "addWhere": "${safeStr(item.addWhere || '')}" } }`;
       }
       const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 1800, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
@@ -204,14 +248,24 @@ Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
     }
 
-    // --- MAIN ANALYSIS ---
-    if (config.mode?.includes('Custom') && (!selectedLenses || selectedLenses.length === 0)) {
+    // --- MAIN ANALYSIS (Full / Focused / Custom) ---
+    // Fix #12: Explicit unknown-type guard. If a type string was sent that matched none
+    // of the handlers above, it would silently fall through to here and attempt a full
+    // 12-category report, which is incorrect and wasteful. Return a clear 400 instead.
+    const knownTypes = ['prize','materializer','gamifier','iep','chat','iterative-init-activities','iterative-init-exceed','iterative-respond','iterative-reanalyze','iterative-summary','iterative-gap'];
+    if (type && !knownTypes.includes(type)) {
+      return NextResponse.json({ error: `Unknown request type: ${type}` }, { status: 400 });
+    }
+    // includes('Custom') would match any hypothetical future mode containing "Custom",
+    // and includes('Focused') is similarly fragile. Exact === comparisons are unambiguous
+    // and match exactly the mode strings used in the client dropdown.
+    if (config.mode === 'Custom selection' && (!selectedLenses || selectedLenses.length === 0)) {
       return NextResponse.json({ error: 'No categories selected for custom mode.' }, { status: 400 });
     }
 
     let reportCommand = 'Full report: return EXACTLY 12 objects for ALL 12 categories (Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure).';
-    if (config.mode?.includes('Focused')) reportCommand = 'Focused report: Analyze ONLY the top 3 highest-priority categories.';
-    if (config.mode?.includes('Custom')) reportCommand = `Custom selection: Analyze EXACTLY these ${selectedLenses.length} categories: ${selectedLenses.join(', ')}.`;
+    if (config.mode === 'Focused report') reportCommand = 'Focused report: Analyze ONLY the top 3 highest-priority categories.';
+    if (config.mode === 'Custom selection') reportCommand = `Custom selection: Analyze EXACTLY these ${selectedLenses.length} categories: ${selectedLenses.join(', ')}.`;
 
     const systemPrompt = `You are an Elite Teacher Mentor. Analyze lesson for ${config.grade} ${config.subject} (${config.profile} learners). Tone: "${config.tone}". Time: ${config.minutes}m.
 ${reportCommand}
@@ -223,7 +277,6 @@ Return JSON: { "feedback":[ { "id", "name", "pioneer", "theory", "lessonFeedback
     return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
 
   } catch (error: any) {
-    // Safe error — never expose raw internal messages to the client
     console.error('[API Error]', error);
     const isKnown = error?.message?.includes('JSON') || error?.message?.includes('token') || error?.message?.includes('rate limit');
     const safeMessage = isKnown
