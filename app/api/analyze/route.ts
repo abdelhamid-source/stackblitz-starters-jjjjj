@@ -126,28 +126,29 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
 
     // --- ITERATIVE SECTION 1: Activity & Section Feedback ---
     if (type === 'iterative-init-activities') {
-      const prompt = `You are an Elite Teacher Mentor — the best in the world — conducting a rigorous, deeply detailed iterative review of a lesson plan. Adopt a "${config.tone}" tone throughout every field.
+      const prompt = `You are an Elite Teacher Mentor — the absolute best in the world — conducting a rigorous, precise iterative review of a real teacher's lesson plan. Adopt a "${config.tone}" tone throughout every single field.
 
 LESSON CONTEXT: Grade ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Class Time: ${config.minutes} minutes.
 
-Identify between 4 and 6 distinct ACTIVITIES or LESSON SECTIONS explicitly present in this lesson (e.g., hook, warm-up, direct instruction, guided practice, independent practice, group activity, exit ticket, closure, discussion, etc.).
+YOUR TASK: Read the lesson text carefully. Identify between 4 and 6 distinct ACTIVITIES or LESSON SECTIONS that are EXPLICITLY present in this lesson (e.g., hook, warm-up, do now, direct instruction, modeling, guided practice, independent practice, group work, discussion, exit ticket, closure).
 
-For EACH activity/section return ALL of the following fields with MAXIMUM DEPTH AND DETAIL:
+STRICT RULES — violating any of these is a failure:
+1. ONLY include sections that genuinely exist in the lesson text with a real verbatim quote.
+2. The "quote" field MUST be an EXACT verbatim substring copied character-for-character from the lesson text — max 25 words. It must be findable by exact string search. Do NOT paraphrase or summarize. Do NOT make up quotes.
+3. "notFound" must ALWAYS be false — only include sections you can actually quote.
+4. Spread feedback across the WHOLE lesson — beginning, middle, AND end. Do not cluster all feedback in one place.
+5. Every field must be calibrated to Grade ${config.grade}, Subject ${config.subject}, ${config.profile} learners, ${config.minutes}-minute class.
 
-- "id": unique string like "act_1"
-- "sectionName": the name/label of this activity as it appears or can be inferred from the lesson
-- "quote": EXACT verbatim substring copied character-for-character from the lesson text representing this section. MAX 25 words. Must be findable via exact string search.
-- "notFound": false — only include sections that genuinely exist with a real exact quote
-- "feedback": THIS IS THE MOST IMPORTANT FIELD. Write a THOROUGH, DEEPLY ANALYTICAL critique of this specific activity (4–6 sentences minimum). You must: (1) Name the specific pedagogical weakness and explain WHY it is a weakness for ${config.profile} learners at Grade ${config.grade} in ${config.subject}. (2) Reference a relevant educational theory or researcher by name to ground your critique. (3) Explain the specific impact this weakness has on student learning outcomes in a ${config.minutes}-minute class. (4) Identify what is missing or underdeveloped. Do NOT be vague or generic.
-- "revision": A RICH, DETAILED, PEDAGOGICALLY ELEVATED rewrite of the quoted section. Length should match or slightly exceed the original quote. Must be immediately usable as a direct replacement for Grade ${config.grade} ${config.subject} ${config.profile} students in ${config.minutes} minutes.
-- "priority": "HIGH" if this activity has a fundamental pedagogical flaw, "MEDIUM" if it is a meaningful refinement
+For EACH activity/section return ALL of these fields:
+- "id": unique string like "act_1", "act_2" etc.
+- "sectionName": the name of this activity as it appears or can be clearly inferred from the lesson
+- "quote": EXACT verbatim substring from the lesson — MAX 25 words — character-for-character copy
+- "notFound": false (always)
+- "feedback": THOROUGH, DEEPLY ANALYTICAL critique (minimum 4–6 sentences). You MUST: (1) Name the specific pedagogical weakness and explain WHY it is a weakness for ${config.profile} learners at Grade ${config.grade} in ${config.subject}. (2) Reference a specific educational researcher or theory by name. (3) Explain the concrete impact on student outcomes in a ${config.minutes}-minute class. (4) Identify exactly what is missing or underdeveloped. Be specific — no generic statements.
+- "revision": A RICH, DETAILED, PEDAGOGICALLY ELEVATED rewrite of the quoted section. Must be immediately usable as a direct drop-in replacement for Grade ${config.grade} ${config.subject} ${config.profile} students in ${config.minutes} minutes. Length should match or slightly exceed the original quote.
+- "priority": "HIGH" if the activity has a fundamental pedagogical flaw that directly harms learning outcomes. "MEDIUM" if it is a meaningful improvement opportunity.
 
-CRITICAL RULES:
-- ONLY include real sections with real exact verbatim quotes from the lesson text
-- Spread feedback across DIFFERENT parts of the lesson — beginning, middle, and end
-- Every field must be specific to Grade ${config.grade}, Subject ${config.subject}, ${config.profile} learners, ${config.minutes}-minute class
-
-Return ONLY JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
+Return ONLY valid JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
 
       const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 7000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
@@ -155,28 +156,36 @@ Return ONLY JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "
 
     // --- ITERATIVE SECTION 2: Exceed Expectations Guide ---
     if (type === 'iterative-init-exceed') {
-      const prompt = `You are an Elite Teacher Mentor — the best in the world — building a deeply detailed, research-grounded "Exceed Expectations" guide for a lesson. Adopt a "${config.tone}" tone throughout every field.
+      const prompt = `You are an Elite Teacher Mentor — the absolute best in the world — building a precise, research-grounded "Exceed Expectations" guide for a real teacher's lesson. Adopt a "${config.tone}" tone throughout every field.
 
 LESSON CONTEXT: Grade ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Class Time: ${config.minutes} minutes.
 
-Evaluate this lesson against 5 pedagogical frameworks and provide rich, expert-level guidance to reach TRULY EXCEEDED EXPECTATIONS for each:
-1. Scaffolding (Vygotsky — Zone of Proximal Development)
-2. Differentiation (Tomlinson — Universal Design for Learning)
-3. Culturally Responsive Teaching (Gloria Ladson-Billings)
-4. Engagement (Fredricks — Behavioral/Cognitive/Emotional Engagement Framework)
-5. Objectives (Bloom's Taxonomy — Anderson & Krathwohl revision)
+Evaluate this lesson against EXACTLY these 5 pedagogical frameworks. The pioneer names are FIXED — use them exactly as written below, no substitutions:
 
-For EACH category return ALL of the following fields with MAXIMUM DEPTH AND DETAIL:
+1. Scaffolding — Pioneer: Lev Vygotsky — Theory: Zone of Proximal Development
+2. Differentiation — Pioneer: Carol Ann Tomlinson — Theory: Differentiated Instruction
+3. Culturally Responsive Teaching — Pioneer: Gloria Ladson-Billings — Theory: Culturally Relevant Pedagogy
+4. Engagement — Pioneer: Phil Schlechty — Theory: Schlechty's Levels of Engagement
+5. Objectives — Pioneer: Benjamin Bloom — Theory: Bloom's Taxonomy (Anderson & Krathwohl revision)
 
-- "category": exact name from list above
-- "pioneer": pioneer's full name
-- "hasSection": boolean — does this lesson have meaningful content addressing this framework?
-- "quote": if hasSection TRUE → EXACT verbatim substring from the lesson text, max 25 words, copied character-for-character. If hasSection FALSE → empty string "".
-- "currentLevel": if hasSection TRUE → a DETAILED honest assessment of the current quality (3–4 sentences).
-- "revision": RICH, THOROUGH revision or addition (minimum 5–8 sentences). If hasSection TRUE → rewrite quoted section to TRULY EXCEED EXPECTATIONS with specific named strategies for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. If hasSection FALSE → complete ready-to-insert instructional section in the same voice as the teacher's lesson.
-- "addWhere": if hasSection FALSE → exactly where in the lesson to insert this.
+STRICT RULES — violating any of these is a failure:
+1. Return EXACTLY 5 objects — one for each framework above. No more, no fewer.
+2. The "category" field MUST use the exact category name from the list above.
+3. The "pioneer" field MUST use the exact pioneer name from the list above — do not change these.
+4. If hasSection is TRUE: the "quote" field MUST be an EXACT verbatim substring from the lesson text (max 25 words, character-for-character). Do NOT paraphrase. Do NOT invent quotes.
+5. If hasSection is FALSE: "quote" must be an empty string "".
+6. Every revision and addition must be calibrated to Grade ${config.grade}, Subject ${config.subject}, ${config.profile} learners, ${config.minutes} minutes.
 
-Return ONLY JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
+For EACH framework return ALL of these fields:
+- "category": exact framework name from the list above
+- "pioneer": exact pioneer name from the list above — FIXED, do not change
+- "hasSection": boolean — true if the lesson has meaningful content addressing this framework
+- "quote": if hasSection TRUE → EXACT verbatim substring, max 25 words. If hasSection FALSE → ""
+- "currentLevel": if hasSection TRUE → DETAILED honest assessment of current quality (3–4 sentences, specific to this lesson). If hasSection FALSE → ""
+- "revision": RICH, THOROUGH improvement. If hasSection TRUE → rewrite the quoted section to TRULY EXCEED expectations with specific named strategies for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes (minimum 5–8 sentences). If hasSection FALSE → a complete ready-to-insert instructional section written in the same voice as the teacher's lesson (minimum 5–8 sentences).
+- "addWhere": if hasSection FALSE → exact location in the lesson where this should be inserted (e.g., "After the warm-up activity, before direct instruction"). If hasSection TRUE → ""
+
+Return ONLY valid JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
 
       const r = await openai.chat.completions.create({ model: 'gpt-4o', max_tokens: 7000, messages: [{ role: 'system', content: prompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
       return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
@@ -249,29 +258,62 @@ Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`
     }
 
     // --- MAIN ANALYSIS (Full / Focused / Custom) ---
-    // Fix #12: Explicit unknown-type guard. If a type string was sent that matched none
-    // of the handlers above, it would silently fall through to here and attempt a full
-    // 12-category report, which is incorrect and wasteful. Return a clear 400 instead.
+    // Unknown-type guard — any unrecognised type returns a clean 400
     const knownTypes = ['prize','materializer','gamifier','iep','chat','iterative-init-activities','iterative-init-exceed','iterative-respond','iterative-reanalyze','iterative-summary','iterative-gap'];
     if (type && !knownTypes.includes(type)) {
       return NextResponse.json({ error: `Unknown request type: ${type}` }, { status: 400 });
     }
-    // includes('Custom') would match any hypothetical future mode containing "Custom",
-    // and includes('Focused') is similarly fragile. Exact === comparisons are unambiguous
-    // and match exactly the mode strings used in the client dropdown.
+
     if (config.mode === 'Custom selection' && (!selectedLenses || selectedLenses.length === 0)) {
       return NextResponse.json({ error: 'No categories selected for custom mode.' }, { status: 400 });
     }
 
-    let reportCommand = 'Full report: return EXACTLY 12 objects for ALL 12 categories (Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure).';
-    if (config.mode === 'Focused report') reportCommand = 'Focused report: Analyze ONLY the top 3 highest-priority categories.';
-    if (config.mode === 'Custom selection') reportCommand = `Custom selection: Analyze EXACTLY these ${selectedLenses.length} categories: ${selectedLenses.join(', ')}.`;
+    // Pioneer names hardcoded in prompt — AI cannot hallucinate or substitute these
+    const PIONEER_INSTRUCTIONS = `MANDATORY — Pioneer names are FIXED. Use EXACTLY these, no changes allowed:
+Clarity → John Hattie | Alignment → Ralph Tyler | Inclusivity → David Rose & Anne Meyer
+Scaffolding → Lev Vygotsky | Differentiation → Carol Ann Tomlinson | Objectives → Benjamin Bloom
+Assessments → Dylan Wiliam | Engagement → Phil Schlechty | Strategies → Robert Marzano
+Materials → Grant Wiggins | Collaboration → David & Roger Johnson | Closure → Madeline Hunter`;
 
-    const systemPrompt = `You are an Elite Teacher Mentor. Analyze lesson for ${config.grade} ${config.subject} (${config.profile} learners). Tone: "${config.tone}". Time: ${config.minutes}m.
+    // FIX 2 — Focused: exactly 3, stated twice, with explicit failure condition
+    // FIX 3 — Custom: allowed categories listed twice with explicit prohibition
+    let reportCommand = '';
+    if (config.mode === 'Focused report') {
+      reportCommand = `FOCUSED REPORT MODE.
+You MUST return EXACTLY 3 feedback objects — no more, no fewer. This is a hard requirement.
+Choose the 3 categories where THIS specific lesson has the GREATEST room for improvement.
+Do NOT return 4, 5, 6, or any other number. Returning anything other than exactly 3 objects is a failure.
+The 3 categories must come from: Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure.`;
+    } else if (config.mode === 'Custom selection') {
+      const catList = selectedLenses.join(', ');
+      reportCommand = `CUSTOM SELECTION MODE.
+Return EXACTLY ${selectedLenses.length} feedback object(s) — one for each of these categories and NO others: ${catList}.
+Do NOT include any category not in this list. Do NOT add extra categories. Do NOT substitute different categories.
+Allowed categories (ONLY these): ${catList}.
+Return EXACTLY ${selectedLenses.length} object(s), no more, no fewer.`;
+    } else {
+      reportCommand = `FULL REPORT MODE.
+Return EXACTLY 12 objects — one for EACH of ALL 12 categories: Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure.
+Do not omit any category. Do not add extras.`;
+    }
+
+    const systemPrompt = `You are an Elite Teacher Mentor. Analyze this lesson for ${config.grade} ${config.subject} (${config.profile} learners). Tone: "${config.tone}". Class duration: ${config.minutes} minutes.
+
 ${reportCommand}
-For each category: theory (90w), lessonFeedback (100w), upgrade (100w), example (150w), quiz (5 MCQs: question, options, correct).
-CATEGORIES: Clarity, Alignment, Inclusivity, Scaffolding, Differentiation, Objectives, Assessments, Engagement, Strategies, Materials, Collaboration, Closure.
-Return JSON: { "feedback":[ { "id", "name", "pioneer", "theory", "lessonFeedback", "upgrade", "example", "quiz" } ] }`;
+
+${PIONEER_INSTRUCTIONS}
+
+For EACH category object return ALL of these fields:
+- "id": unique string
+- "name": exact category name from the allowed list
+- "pioneer": EXACTLY as specified in the pioneer instructions above — do not change these names under any circumstances
+- "theory": 90 words explaining the research theory behind this category
+- "lessonFeedback": 100 words of specific feedback on THIS lesson through this lens — reference actual content from the lesson
+- "upgrade": 100 words of concrete, actionable suggestions to improve this specific lesson
+- "example": 150 words describing a precise instructional routine for Grade ${config.grade} ${config.subject} ${config.profile} students in a ${config.minutes}-minute class
+- "quiz": exactly 5 multiple-choice questions, each with "question" (string), "options" (array of exactly 4 strings), "correct" (one of the 4 option strings exactly as written)
+
+Return JSON: { "feedback": [ { "id", "name", "pioneer", "theory", "lessonFeedback", "upgrade", "example", "quiz" } ] }`;
 
     const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', max_tokens: 16000, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: lessonText }], response_format: { type: 'json_object' } });
     return NextResponse.json(JSON.parse(r.choices[0].message.content || '{}'));
