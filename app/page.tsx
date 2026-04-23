@@ -1131,10 +1131,17 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                           {s1Loading && <RefreshCcw size={16} className="animate-spin text-emerald-600 dark:text-emerald-400" />}
                         </div>
                         {s1Loading ? (
-                          <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-indigo-600 dark:text-indigo-400 mx-auto mb-3" />
-                            <p className="text-sm text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Analyzing your lesson activities...</p>
-                          </div>
+                          <RotatingLoader
+                            color="indigo"
+                            messages={[
+                              'Reading your lesson carefully...',
+                              'Identifying key activities and sections...',
+                              'Extracting verbatim quotes from your lesson...',
+                              'Analyzing each activity through research lenses...',
+                              'Writing detailed feedback and revisions...',
+                              'Almost there — finalizing your cards...',
+                            ]}
+                          />
                         ) : (
                           <AnimatePresence>
                             {section1.map(item => (
@@ -1171,10 +1178,17 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">How to fully address all 5 pedagogical frameworks in your lesson</p>
                         {s2Loading ? (
-                          <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
-                            <RefreshCcw size={24} className="animate-spin text-purple-700 dark:text-[#bc13fe] mx-auto mb-3" />
-                            <p className="text-sm text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Building exceed-expectations guide...</p>
-                          </div>
+                          <RotatingLoader
+                            color="purple"
+                            messages={[
+                              'Checking scaffolding against Vygotsky\'s ZPD...',
+                              'Evaluating differentiation for your learners...',
+                              'Assessing cultural responsiveness...',
+                              'Measuring engagement levels (Schlechty)...',
+                              'Reviewing objectives against Bloom\'s Taxonomy...',
+                              'Composing your Exceed Expectations guide...',
+                            ]}
+                          />
                         ) : (
                           <AnimatePresence>
                             {section2.map(item => (
@@ -1466,6 +1480,45 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
 }
 
 // --- SUBCOMPONENTS ---
+
+// RotatingLoader — cycles through a list of messages so long waits feel active.
+// Each message shows for ~3 seconds before rotating. When all messages have cycled,
+// it holds on the last one. Gives the teacher a sense of progress during 60-90s waits.
+function RotatingLoader({ messages, color = 'indigo' }: { messages: string[]; color?: string }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (idx >= messages.length - 1) return;
+    const t = setTimeout(() => setIdx(i => i + 1), 3500);
+    return () => clearTimeout(t);
+  }, [idx, messages.length]);
+  const colorClass = color === 'purple'
+    ? 'text-purple-700 dark:text-[#bc13fe]'
+    : color === 'emerald'
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : 'text-indigo-600 dark:text-indigo-400';
+  return (
+    <div className="bg-[var(--card)] border border-[var(--border)] rounded-[2rem] p-8 text-center">
+      <RefreshCcw size={24} className={`animate-spin ${colorClass} mx-auto mb-3`} />
+      <motion.p
+        key={idx}
+        initial={{ opacity: 0, y: 5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-sm text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest"
+      >
+        {messages[idx]}
+      </motion.p>
+      <div className="flex gap-1.5 justify-center mt-4">
+        {messages.map((_, i) => (
+          <div
+            key={i}
+            className={`w-1.5 h-1.5 rounded-full transition-all ${i <= idx ? (color === 'purple' ? 'bg-purple-500' : color === 'emerald' ? 'bg-emerald-500' : 'bg-indigo-500') : 'bg-slate-300 dark:bg-slate-700'}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MenuTile({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
   return (
     <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 flex flex-col items-center justify-center shadow-md transition-all hover:border-indigo-500/40 flex-1 min-w-[150px] text-center">
