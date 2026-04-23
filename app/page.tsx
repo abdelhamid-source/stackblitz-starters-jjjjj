@@ -659,15 +659,24 @@ ${changelog.length > 0 ? `<h2 style="color:#4f46e5;font-size:16pt;margin-top:40p
     setFailedChunks([]);
     try {
       const chunks = chunkArray(cats, 3);
-      const results = await Promise.allSettled(
-        chunks.map(chunk =>
-          fetch('/api/analyze', {
+
+      // Sequential chunk fetching — avoids Anthropic's concurrent-connection rate limit
+      // (new accounts are capped at ~50 concurrent requests; parallel chunks triggered 429s).
+      // Slightly slower than parallel but reliable and still well under a minute total.
+      const results: { status: 'fulfilled' | 'rejected'; value?: any }[] = [];
+      for (const chunk of chunks) {
+        try {
+          const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lessonText, config: { ...config, mode: 'Custom selection' }, selectedLenses: chunk })
-          }).then(r => r.json())
-        )
-      );
+          });
+          const data = await res.json();
+          results.push({ status: 'fulfilled', value: data });
+        } catch {
+          results.push({ status: 'rejected' });
+        }
+      }
 
       const merged: any[] = [];
       const failed: string[] = [];
