@@ -20,12 +20,27 @@ export const maxDuration = 300;
    ============================================================================ */
 
 // Model constants — edit one string to rebalance cost/quality for a single task
-const MODEL_ELITE    = 'claude-opus-4-7';       // Prize only — the crown jewel
-const MODEL_PREMIUM  = 'claude-sonnet-4-6';     // Iterative init (activity + exceed)
-const MODEL_STANDARD = 'claude-haiku-4-5';      // Main analysis, IEP, iterative respond/reanalyze
-const MODEL_LIGHT    = 'gpt-4o-mini';           // Chat, summaries, gap, gamifier
+const MODEL_ELITE    = 'claude-opus-4-7';              // Prize only — the crown jewel
+const MODEL_PREMIUM  = 'claude-sonnet-4-6';            // Iterative init (activity + exceed)
+const MODEL_STANDARD = 'claude-haiku-4-5-20251001';    // Main analysis, IEP, iterative respond/reanalyze — dated version for production reliability
+const MODEL_LIGHT    = 'gpt-4o-mini';                  // Chat, summaries, gap, gamifier
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+// Strip markdown code fences from AI output before JSON.parse.
+// Claude sometimes wraps JSON responses in ```json ... ``` fences even when
+// instructed to return pure JSON. OpenAI's response_format parameter prevents
+// this on their side; Claude has no equivalent, so we clean the output here.
+// Handles:  ```json\n{...}\n```   or   ```\n{...}\n```   or just  {...}
+const stripJsonFences = (s: string): string => {
+  if (!s) return '{}';
+  let cleaned = s.trim();
+  // Remove leading ```json or ``` and trailing ```
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+  return cleaned.trim() || '{}';
+};
 
 // Unified JSON generation helper — dispatches to the right SDK based on model name
 async function generateJSON(params: {
@@ -39,11 +54,14 @@ async function generateJSON(params: {
   const { model, maxTokens, systemPrompt, userContent, openai, anthropic } = params;
 
   if (model.startsWith('claude-')) {
-    // Anthropic: system goes in its own top-level field
+    // Anthropic: system goes in its own top-level field.
+    // Append an explicit no-markdown reminder so Claude doesn't wrap JSON in ```json fences.
+    // The stripJsonFences() helper at each call site is the backup if Claude ignores this.
+    const hardenedSystem = systemPrompt + '\n\nIMPORTANT: Respond with raw JSON only. Do not wrap your response in markdown code fences (no ```json, no ```). Start your response directly with { and end with }.';
     const resp = await anthropic.messages.create({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: hardenedSystem,
       messages: [{ role: 'user', content: userContent }],
     });
     const text = resp.content
@@ -143,7 +161,7 @@ export async function POST(req: Request) {
     if (type === 'prize') {
       const prizePrompt = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone throughout — this must shape your vocabulary, phrasing, and attitude in every section. Transform the following lesson into an elite-level lesson plan. Grade: ${config.grade}, Subject: ${config.subject}, Learner Profile: ${config.profile}, Time: ${config.minutes}m. Return ONLY a JSON object with EXACTLY these string keys: "Lesson Title", "Subject", "Grade Level", "Unit", "Section", "Objectives", "Materials Needed", "Anticipatory Set/Hook", "Direct Instruction", "Guided Practice", "Independent Practice", "Game Review", "Closure/Homework", "Assessment", "Differentiation". Every section must be written for ${config.profile} learners in a ${config.grade} ${config.subject} class. State allocated time at the start of each instructional phase. All phases must sum to exactly ${config.minutes}m.`;
       const content = await generateJSON({ model: MODEL_ELITE, maxTokens: 3500, systemPrompt: prizePrompt, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- MATERIALIZER (LEGACY — being replaced by Material Studio in Step 2) ---
@@ -183,7 +201,7 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
     if (type === 'gamifier') {
       const gp = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a 10-question MCQ trivia game perfectly calibrated for Grade ${config.grade} ${config.subject} ${config.profile} learners in a ${config.minutes}-minute class. Questions must match the vocabulary, complexity, and content expectations for ${config.grade} ${config.profile} students. Return ONLY JSON: { "csv": string }. CSV header: "Question,Answer 1,Answer 2,Answer 3,Answer 4,Time limit (sec),Correct answer(s)". Time limit 20. Correct answer 1-4. Output all 10 questions completely — do NOT truncate.`;
       const content = await generateJSON({ model: MODEL_LIGHT, maxTokens: 1500, systemPrompt: gp, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- IEP SCAFFOLD — CLAUDE HAIKU 4.5 ---
@@ -193,7 +211,7 @@ HTML: fully styled inline CSS, readable fonts, generous spacing. Tables for grid
     if (type === 'iep') {
       const ip = `You are an Elite Teacher Mentor. Adopt a "${config.tone}" tone. Create a custom micro-scaffold accommodation for this specific student: "${userMessage}". This scaffold is for use in a Grade ${config.grade} ${config.subject} class of ${config.profile} learners within a ${config.minutes}-minute period. The scaffold must account for both the individual student's needs AND the broader class context (${config.profile}). Return ONLY JSON: { "html": "fully styled HTML ready to print" }.`;
       const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 3000, systemPrompt: ip, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- CHAT (Ask the Mentor) — gpt-4o-mini ---
@@ -256,7 +274,7 @@ For EACH activity/section return ALL of these fields:
 Return ONLY valid JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
 
       const content = await generateJSON({ model: MODEL_PREMIUM, maxTokens: 7000, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- ITERATIVE SECTION 2: Exceed Expectations Guide — CLAUDE SONNET 4.6 ---
@@ -294,7 +312,7 @@ For EACH framework return ALL of these fields:
 Return ONLY valid JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
 
       const content = await generateJSON({ model: MODEL_PREMIUM, maxTokens: 7000, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- ITERATIVE RESPOND — CLAUDE HAIKU 4.5 ---
@@ -322,7 +340,7 @@ Update your guidance. "currentLevel" must be DETAILED (3–4 sentences) if hasSe
 Return ONLY JSON: { "feedback": { "category": "${safeStr(item.category)}", "pioneer": "${safeStr(item.pioneer)}", "hasSection": ${item.hasSection}, "quote": "${safeStr(item.quote || '')}", "currentLevel": "...", "revision": "...", "addWhere": "${safeStr(item.addWhere || '')}" } }`;
       }
       const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1800, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- ITERATIVE REANALYZE — CLAUDE HAIKU 4.5 ---
@@ -340,7 +358,7 @@ Return ONLY JSON: { "feedback": { "id": "act_r", "sectionName": "${sectionName}"
 Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "hasSection": ..., "quote": "...", "currentLevel": "...", "revision": "...", "addWhere": "..." } }`;
       }
       const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1800, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- ITERATIVE SUMMARY — gpt-4o-mini ---
@@ -352,7 +370,7 @@ ${(changelog || []).map((c: any, i: number) => `${i + 1}. [${c.sectionName}] "${
 Write a warm, encouraging 3–4 sentence summary in a "${config.tone}" voice explaining what improved and why it strengthens the lesson for ${config.grade} ${config.profile} students in ${config.minutes} minutes. Be specific. End with one concrete next step.
 Return ONLY JSON: { "summary": "..." }`;
       const content = await generateJSON({ model: MODEL_LIGHT, maxTokens: 600, systemPrompt: sp, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- ITERATIVE GAP DETECTOR — gpt-4o-mini ---
@@ -362,7 +380,7 @@ Return ONLY JSON: { "summary": "..." }`;
 For each: "category", "adequatelyAddressed" (boolean), "note" (if not adequately addressed — one concrete sentence on what is still missing, written for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes).
 Return ONLY JSON: { "gaps": [ { "category", "adequatelyAddressed", "note" } ] }`;
       const content = await generateJSON({ model: MODEL_LIGHT, maxTokens: 600, systemPrompt: gp, userContent: lessonText, openai, anthropic });
-      return NextResponse.json(JSON.parse(content || '{}'));
+      return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
     // --- MAIN ANALYSIS (Full / Focused / Custom) — CLAUDE HAIKU 4.5 ---
@@ -423,7 +441,7 @@ For EACH category object return ALL of these fields:
 Return JSON: { "feedback": [ { "id", "name", "pioneer", "theory", "lessonFeedback", "upgrade", "example", "quiz" } ] }`;
 
     const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 16000, systemPrompt, userContent: lessonText, openai, anthropic });
-    return NextResponse.json(JSON.parse(content || '{}'));
+    return NextResponse.json(JSON.parse(stripJsonFences(content)));
 
   } catch (error: any) {
     console.error('[API Error]', error);
