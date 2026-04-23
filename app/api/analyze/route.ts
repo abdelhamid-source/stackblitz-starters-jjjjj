@@ -273,12 +273,15 @@ For EACH activity/section return ALL of these fields:
 
 Return ONLY valid JSON: { "feedbacks": [ { "id", "sectionName", "quote", "notFound", "feedback", "revision", "priority" } ] }`;
 
-      const content = await generateJSON({ model: MODEL_PREMIUM, maxTokens: 7000, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
+      const content = await generateJSON({ model: MODEL_PREMIUM, maxTokens: 5000, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
       return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
-    // --- ITERATIVE SECTION 2: Exceed Expectations Guide — CLAUDE SONNET 4.6 ---
-    // Same verbatim-quote requirement as activities, same model.
+    // --- ITERATIVE SECTION 2: Exceed Expectations Guide — CLAUDE HAIKU 4.5 ---
+    // Downgraded from Sonnet 4.6 to Haiku 4.5 for speed + cost.
+    // Exceed guide is less quote-dependent than the activities section (often hasSection=false
+    // with no quote to extract), so Haiku's slightly looser verbatim behavior is acceptable here.
+    // Cost: ~$0.015 per call instead of ~$0.055. Time: ~3x faster than Sonnet.
     if (type === 'iterative-init-exceed') {
       const prompt = `You are an Elite Teacher Mentor — the absolute best in the world — building a precise, research-grounded "Exceed Expectations" guide for a real teacher's lesson. Adopt a "${config.tone}" tone throughout every field.
 
@@ -311,7 +314,7 @@ For EACH framework return ALL of these fields:
 
 Return ONLY valid JSON: { "guide": [ { "category", "pioneer", "hasSection", "quote", "currentLevel", "revision", "addWhere" } ] }`;
 
-      const content = await generateJSON({ model: MODEL_PREMIUM, maxTokens: 7000, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
+      const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 4500, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
       return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
@@ -339,7 +342,7 @@ Grade: ${config.grade}, Subject: ${config.subject}, Profile: ${config.profile}, 
 Update your guidance. "currentLevel" must be DETAILED (3–4 sentences) if hasSection true. "revision" must be RICH and THOROUGH (5–8 sentences minimum). hasSection stays ${item.hasSection}. If true, quote must be EXACT substring max 25 words.
 Return ONLY JSON: { "feedback": { "category": "${safeStr(item.category)}", "pioneer": "${safeStr(item.pioneer)}", "hasSection": ${item.hasSection}, "quote": "${safeStr(item.quote || '')}", "currentLevel": "...", "revision": "...", "addWhere": "${safeStr(item.addWhere || '')}" } }`;
       }
-      const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1800, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
+      const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1500, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
       return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
@@ -357,7 +360,7 @@ Return ONLY JSON: { "feedback": { "id": "act_r", "sectionName": "${sectionName}"
 "currentLevel" must be a DETAILED honest assessment (3–4 sentences) if hasSection true. "revision" must be RICH and THOROUGH (5–8 sentences minimum) with specific named strategies for Grade ${config.grade} ${config.subject} ${config.profile} in ${config.minutes} minutes. If hasSection true, quote must be EXACT substring max 25 words.
 Return ONLY JSON: { "feedback": { "category": "${category}", "pioneer": "...", "hasSection": ..., "quote": "...", "currentLevel": "...", "revision": "...", "addWhere": "..." } }`;
       }
-      const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1800, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
+      const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 1500, systemPrompt: prompt, userContent: lessonText, openai, anthropic });
       return NextResponse.json(JSON.parse(stripJsonFences(content)));
     }
 
@@ -440,7 +443,21 @@ For EACH category object return ALL of these fields:
 
 Return JSON: { "feedback": [ { "id", "name", "pioneer", "theory", "lessonFeedback", "upgrade", "example", "quiz" } ] }`;
 
-    const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: 16000, systemPrompt, userContent: lessonText, openai, anthropic });
+    // Dynamic max_tokens sized to the actual output need per mode.
+    // Each category produces ~600-800 tokens of rich content (theory 90w + feedback 100w +
+    // upgrade 100w + example 150w + 5 quiz MCQs). Previous 16,000 cap was massive overkill
+    // for Focused (3 lenses ~2,500 tokens) and reasonable for Full (12 lenses ~9,000 tokens
+    // but chunked into groups of 3, so ~2,500 per chunk). Tighter caps prevent Claude from
+    // over-writing and reduce cost without losing any actual content.
+    let maxAnalysisTokens = 6000; // Full report default — 3 categories per chunk × ~800 tokens + headroom
+    if (config.mode === 'Focused report') maxAnalysisTokens = 5000; // 3 lenses total, single call
+    else if (config.mode === 'Custom selection') {
+      // Size proportional to how many categories were requested in this specific chunk
+      const chunkSize = selectedLenses?.length || 3;
+      maxAnalysisTokens = Math.min(16000, 1500 + chunkSize * 1200);
+    }
+
+    const content = await generateJSON({ model: MODEL_STANDARD, maxTokens: maxAnalysisTokens, systemPrompt, userContent: lessonText, openai, anthropic });
     return NextResponse.json(JSON.parse(stripJsonFences(content)));
 
   } catch (error: any) {
